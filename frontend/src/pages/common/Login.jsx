@@ -49,7 +49,7 @@ export default function Login() {
           autoComplete="email"
           value={form.email}
           onChange={update('email')}
-          placeholder="you@example.com"
+          placeholder="Enter your email"
           required
         />
         <TextField
