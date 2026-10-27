@@ -1,0 +1,56 @@
+/*
+ * Voice Mock Test design tokens (Option A: Navy & Teal).
+ * Same values as the Figma design system. Change colours, spacing or radii here only.
+ */
+:root {
+  /* Brand colours */
+  --navy: #142b4a;
+  --teal: #16a6a1;
+  --white: #ffffff;
+  --teal-tint: #e3f5f4;
+  --muted: #5b6b82;
+  --border: #dce3ec;
+
+  /* Supporting colours */
+  --page: #f5f8fb;
+  --teal-strong: #0b6e6a;
+  --border-control: #7a889c;
+  --navy-raised: #23406a;
+  --on-navy-muted: #b8c4d6;
+  --neutral-tint: #eef2f6;
+  --warning: #8a5a00;
+  --warning-tint: #fff3d6;
+  --danger: #b42318;
+  --danger-tint: #fdecea;
+  --on-teal: var(--navy);
+
+  /* Shadows */
+  --shadow-card: 0 1px 2px rgba(20, 43, 74, 0.06), 0 4px 16px rgba(20, 43, 74, 0.06);
+  --shadow-overlay: 0 16px 48px rgba(20, 43, 74, 0.24);
+  --shadow-focus: 0 0 0 2px #ffffff, 0 0 0 4px #0b6e6a;
+
+  /* Spacing (8px grid) */
+  --space-05: 4px;
+  --space-1: 8px;
+  --space-2: 16px;
+  --space-3: 24px;
+  --space-4: 32px;
+  --space-5: 40px;
+  --space-6: 48px;
+  --space-8: 64px;
+
+  /* Radii */
+  --radius-control: 8px;
+  --radius-card: 12px;
+  --radius-pill: 999px;
+
+  /* Sizes */
+  --control-height: 44px;
+  --control-height-sm: 36px;
+  --sidebar-width: 248px;
+  --content-max: 1200px;
+  --record-size: 112px;
+
+  /* Type */
+  --font-sans: Inter, 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
