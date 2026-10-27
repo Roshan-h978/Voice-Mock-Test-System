@@ -19,3 +19,4 @@ google-auth>=2.40,<3.0
 
 # ── Production server (Linux hosting) ───────────────────
 gunicorn>=23.0,<24.0
+whitenoise>=6.9,<7.0

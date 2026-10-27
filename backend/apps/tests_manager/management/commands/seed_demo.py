@@ -99,7 +99,9 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS(message))
         self.stdout.write("")
         if admin:
-            default = " / " + settings.DEFAULT_ADMIN_PASSWORD if admin.uses_default_password else " (your password)"
+            # Show the starting password only on a development computer, never in hosting build logs.
+            show = settings.DEBUG and admin.uses_default_password
+            default = " / " + settings.DEFAULT_ADMIN_PASSWORD if show else " (your password)"
             self.stdout.write(f"  Admin    {admin.email}{default}")
         else:
             self.stdout.write("  No admin yet: run  python manage.py create_admin")

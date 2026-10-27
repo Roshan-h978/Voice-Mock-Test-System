@@ -95,7 +95,7 @@ export default function AdminDashboard() {
         <div className="vmt-banner" style={{ background: 'var(--warning-tint)' }}>
           <div className="vmt-stack vmt-stack-sm">
             <span className="title-sm">You're still using the starting password</span>
-            <span className="body-sm vmt-muted">Anyone who knows "admin123" could sign in as you. Choose your own password now.</span>
+            <span className="body-sm vmt-muted">This account still has the password it was created with. Choose your own password now.</span>
           </div>
           <Button to="/admin/profile" icon={KeyRound}>
             Change password
