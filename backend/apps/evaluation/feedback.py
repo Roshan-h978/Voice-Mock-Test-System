@@ -1,5 +1,6 @@
 """
-Written feedback from Anthropic Claude: the per-answer analysis and the attempt summary.
+Written feedback: the per-answer analysis and the attempt summary.
+Anthropic Claude by default, or an open model on Groq's free tier when AI_PROVIDER=groq.
 
 All text follows the product tone: plain, friendly and respectful, never sarcastic.
 """
@@ -13,6 +14,7 @@ from django.conf import settings
 
 from apps.common.utils import clamp_score
 
+from . import providers
 from .speech_to_text import RETRY_STATUS_CODES, EvaluationError, EvaluationNotConfigured
 
 logger = logging.getLogger(__name__)
@@ -71,7 +73,7 @@ def analyse_answer(*, question: str, transcript: str, level: str, measurements: 
             "measurements": measurements,
         }
     )
-    reply = call_claude(ANSWER_SYSTEM_PROMPT, user_content, max_tokens=800)
+    reply = call_model(ANSWER_SYSTEM_PROMPT, user_content, max_tokens=800)
     if reply is None:
         raise EvaluationError()
 
@@ -108,7 +110,7 @@ def summarise_attempt(*, test_title: str, level: str, skills: dict, answers: lis
         }
     )
     try:
-        reply = call_claude(SUMMARY_SYSTEM_PROMPT, user_content, max_tokens=600)
+        reply = call_model(SUMMARY_SYSTEM_PROMPT, user_content, max_tokens=600)
     except EvaluationError:
         logger.warning("Attempt summary unavailable; using fallback text.")
         return fallback
@@ -121,6 +123,68 @@ def summarise_attempt(*, test_title: str, level: str, skills: dict, answers: lis
         "tip": _text(reply.get("tip")) or fallback["tip"],
         "next_step": _text(reply.get("next_step")) or fallback["next_step"],
     }
+
+
+def call_model(system: str, user_content: str, *, max_tokens: int = 800):
+    """Ask the configured feedback model and return the JSON object in its reply (or None)."""
+    if providers.uses_groq():
+        return call_chat_completions(system, user_content, max_tokens=max_tokens)
+    return call_claude(system, user_content, max_tokens=max_tokens)
+
+
+def call_chat_completions(system: str, user_content: str, *, max_tokens: int = 800, tries: int = 2):
+    """OpenAI-compatible chat API (Groq). Returns the JSON object in the reply (or None)."""
+    service = providers.feedback()
+    if not service.api_key:
+        logger.error("%s is missing. Add it to backend/.env or set EVALUATION_DEMO_MODE=True.", service.key_setting)
+        raise EvaluationNotConfigured()
+
+    url = f"{service.base_url}/chat/completions"
+    headers = {"Authorization": f"Bearer {service.api_key}", "Content-Type": "application/json"}
+    body = {
+        "model": service.model,
+        "messages": [{"role": "system", "content": system}, {"role": "user", "content": user_content}],
+        "temperature": 0.2,
+        "max_completion_tokens": max_tokens * 3,  # room for reasoning models to think before answering
+        "response_format": {"type": "json_object"},
+    }
+    if service.model.startswith("openai/gpt-oss"):
+        body["reasoning_effort"] = "low"  # quicker answers and fewer tokens on the free tier
+    simplified = False
+
+    for attempt in range(1, tries + 1):
+        try:
+            response = requests.post(url, headers=headers, json=body, timeout=settings.AI_REQUEST_TIMEOUT)
+        except requests.RequestException as exc:
+            logger.warning("Feedback request failed (try %s): %s", attempt, exc)
+            response = None
+
+        if response is not None:
+            if response.ok:
+                return parse_chat_reply(response.json())
+            logger.warning("Feedback model returned %s (try %s): %s", response.status_code, attempt, response.text[:300])
+            if response.status_code in (401, 403):
+                raise EvaluationNotConfigured()
+            if response.status_code == 400 and not simplified:
+                # The model may not accept an optional setting: try again with the basic request.
+                body = {key: value for key, value in body.items() if key not in ("response_format", "reasoning_effort")}
+                simplified = True
+                continue
+            if response.status_code not in RETRY_STATUS_CODES:
+                break
+        if attempt < tries:
+            time.sleep(2)
+
+    raise EvaluationError()
+
+
+def parse_chat_reply(payload: dict):
+    """Pull the JSON object out of a chat-completions response."""
+    try:
+        text = payload["choices"][0]["message"].get("content") or ""
+    except (KeyError, IndexError, TypeError, AttributeError):
+        return None
+    return _json_object(text)
 
 
 def call_claude(system: str, user_content: str, *, max_tokens: int = 800, tries: int = 2):
@@ -168,6 +232,11 @@ def parse_json_reply(payload: dict):
     text = "".join(
         block.get("text", "") for block in payload.get("content", []) if block.get("type") == "text"
     )
+    return _json_object(text)
+
+
+def _json_object(text: str):
+    """The first {...} object in a model's reply, or None."""
     start, end = text.find("{"), text.rfind("}")
     if start == -1 or end <= start:
         return None

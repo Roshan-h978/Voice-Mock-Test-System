@@ -1,5 +1,6 @@
 """
-Speech-to-text for recorded answers, using the OpenAI transcription API.
+Speech-to-text for recorded answers, using an OpenAI-compatible transcription API
+(OpenAI, or Groq's free tier when AI_PROVIDER=groq).
 
 The errors shared by the whole evaluation pipeline are defined here, because
 transcription is its first step.
@@ -13,6 +14,8 @@ import requests
 from django.conf import settings
 
 from apps.common.utils import ServiceError
+
+from . import providers
 
 logger = logging.getLogger(__name__)
 
@@ -78,11 +81,12 @@ def transcribe(audio, *, filename: str = "answer.webm", content_type: str = "aud
     """Turn a recording (any file-like object) into text with segment timings."""
     if settings.EVALUATION_DEMO_MODE:
         return demo_transcript()
-    if not settings.OPENAI_API_KEY:
-        logger.error("OPENAI_API_KEY is missing. Add it to backend/.env or set EVALUATION_DEMO_MODE=True.")
+    service = providers.speech_to_text()
+    if not service.api_key:
+        logger.error("%s is missing. Add it to backend/.env or set EVALUATION_DEMO_MODE=True.", service.key_setting)
         raise EvaluationNotConfigured()
 
-    model = settings.TRANSCRIBE_MODEL
+    model = service.model
     verbose = model.startswith("whisper")  # only whisper models return segment timings
     data = {
         "model": model,
@@ -90,10 +94,10 @@ def transcribe(audio, *, filename: str = "answer.webm", content_type: str = "aud
         "temperature": "0",
         "response_format": "verbose_json" if verbose else "json",
     }
-    if verbose:
+    if verbose and not providers.uses_groq():  # Groq returns segments without this option
         data["timestamp_granularities[]"] = "segment"
 
-    payload = _request_transcription(audio, filename, content_type, data)
+    payload = _request_transcription(service, audio, filename, content_type, data)
     segments = [
         Segment(
             start=_number(item.get("start")) or 0.0,
@@ -114,9 +118,9 @@ def transcribe(audio, *, filename: str = "answer.webm", content_type: str = "aud
     return transcript
 
 
-def _request_transcription(audio, filename, content_type, data, tries: int = 2) -> dict:
-    url = f"{settings.OPENAI_BASE_URL}/audio/transcriptions"
-    headers = {"Authorization": f"Bearer {settings.OPENAI_API_KEY}"}
+def _request_transcription(service, audio, filename, content_type, data, tries: int = 2) -> dict:
+    url = f"{service.base_url}/audio/transcriptions"
+    headers = {"Authorization": f"Bearer {service.api_key}"}
 
     for attempt in range(1, tries + 1):
         audio.seek(0)

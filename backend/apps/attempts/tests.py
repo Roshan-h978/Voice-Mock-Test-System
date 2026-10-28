@@ -196,6 +196,24 @@ class ReviewAndReportTests(AttemptTestCase):
         self.assertEqual(response.data["attempt"]["reviewer_name"], "Nisha Adhikari")
         self.assertEqual(mail.outbox[-1].to, ["aarati@example.com"])
 
+    def test_review_can_clear_the_tip_and_next_step(self):
+        attempt = self.finished_weak_attempt()
+        self.assertTrue(attempt.tip)
+        self.client.force_authenticate(self.admin)
+        response = self.client.post(
+            reverse("admin-attempt-review", args=[attempt.id]), {"tip": "", "next_step": "", "notify_student": False}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        attempt.refresh_from_db()
+        self.assertEqual((attempt.tip, attempt.next_step), ("", ""))
+
+    def test_a_page_past_the_end_returns_the_last_page(self):
+        self.finished_weak_attempt()
+        self.client.force_authenticate(self.admin)
+        response = self.client.get(reverse("admin-attempts"), {"status": "needs_review", "page": 3, "page_size": 1})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual((response.data["page"], response.data["pages"], len(response.data["results"])), (1, 1, 1))
+
     def test_students_cannot_review(self):
         attempt = self.finished_weak_attempt()
         response = self.client.post(reverse("admin-attempt-review", args=[attempt.id]), {"grammar": 90}, format="json")

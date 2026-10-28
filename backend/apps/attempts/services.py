@@ -159,9 +159,10 @@ def review_attempt(
 
     if strengths is not None:
         attempt.strengths = [text.strip() for text in strengths if text.strip()][:2]
-    if tip:
+    # None = not sent (unchanged); an empty text clears the field.
+    if tip is not None:
         attempt.tip = tip.strip()
-    if next_step:
+    if next_step is not None:
         attempt.next_step = next_step.strip()
     if reviewer_note is not None:
         attempt.reviewer_note = reviewer_note.strip()

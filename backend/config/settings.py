@@ -75,7 +75,6 @@ INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
-    "whitenoise.middleware.WhiteNoiseMiddleware",  # serves /static/ (Django admin styles) in production
     "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -84,6 +83,9 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
+if not DEBUG:
+    # Serves /static/ (Django admin styles) when hosted. During development runserver does this itself.
+    MIDDLEWARE.insert(1, "whitenoise.middleware.WhiteNoiseMiddleware")
 
 ROOT_URLCONF = "config.urls"
 WSGI_APPLICATION = "config.wsgi.application"
@@ -247,9 +249,18 @@ GOOGLE_CLIENT_ID = env("GOOGLE_CLIENT_ID", default="").strip()
 GOOGLE_CERTS_URL = env("GOOGLE_CERTS_URL", default="https://www.googleapis.com/oauth2/v1/certs")
 
 # ---------------------------------------------------------------------------
-# Voice Mock Test: speech evaluation (OpenAI speech-to-text + Anthropic Claude)
+# Voice Mock Test: speech evaluation
+#   AI_PROVIDER=groq   free tier: one Groq key for speech-to-text and feedback
+#   AI_PROVIDER=openai OpenAI speech-to-text + Anthropic Claude feedback (paid)
 # ---------------------------------------------------------------------------
 EVALUATION_DEMO_MODE = env.bool("EVALUATION_DEMO_MODE", default=False)
+AI_PROVIDER = env("AI_PROVIDER", default="openai").strip().lower()
+if AI_PROVIDER not in {"openai", "groq"}:
+    raise ImproperlyConfigured("AI_PROVIDER in backend/.env must be groq or openai.")
+GROQ_API_KEY = env("GROQ_API_KEY", default="").strip()
+GROQ_BASE_URL = env("GROQ_BASE_URL", default="https://api.groq.com/openai/v1").rstrip("/")
+GROQ_TRANSCRIBE_MODEL = env("GROQ_TRANSCRIBE_MODEL", default="whisper-large-v3-turbo")
+GROQ_SCORING_MODEL = env("GROQ_SCORING_MODEL", default="openai/gpt-oss-120b")
 OPENAI_API_KEY = env("OPENAI_API_KEY", default="")
 OPENAI_BASE_URL = env("OPENAI_BASE_URL", default="https://api.openai.com/v1").rstrip("/")
 TRANSCRIBE_MODEL = env("TRANSCRIBE_MODEL", default="whisper-1")

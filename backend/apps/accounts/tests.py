@@ -115,6 +115,15 @@ class RegisterAndLoginTests(AccountTestCase):
         self.assertEqual(again.status_code, status.HTTP_401_UNAUTHORIZED)
 
 
+class DeletedAccountTests(AccountTestCase):
+    def test_refresh_after_the_account_was_deleted_is_refused(self):
+        user = make_user()
+        login = self.client.post(reverse("auth-login"), {"email": user.email, "password": PASSWORD}, format="json")
+        user.delete()
+        response = self.client.post(reverse("auth-refresh"), {"refresh": login.data["refresh"]}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
 class ProfileTests(AccountTestCase):
     def setUp(self):
         super().setUp()
@@ -425,3 +434,10 @@ class DefaultAdminTests(AccountTestCase):
         teacher = User.objects.get(email="teacher@example.com")
         self.assertTrue(teacher.is_admin and teacher.check_password("secret99"))
         self.assertFalse(teacher.uses_default_password)
+
+
+class HealthCheckTests(AccountTestCase):
+    def test_health_reports_the_database(self):
+        response = self.client.get("/api/health/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.json(), {"status": "ok", "service": "voice-mock-test-api", "database": "ok"})

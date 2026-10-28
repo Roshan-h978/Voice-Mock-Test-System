@@ -98,7 +98,9 @@ New Google users become students. Someone who already has an account with the sa
 
 ## Real scoring and email
 
-- Scoring: set `EVALUATION_DEMO_MODE=False`, `OPENAI_API_KEY=...`, `ANTHROPIC_API_KEY=...` and restart.
+- Scoring, free: get a key at https://console.groq.com/keys, then set `EVALUATION_DEMO_MODE=False`, `AI_PROVIDER=groq`, `GROQ_API_KEY=gsk_...` and restart. Groq's free tier covers roughly 30 full tests a day.
+- Scoring, paid: set `EVALUATION_DEMO_MODE=False`, `AI_PROVIDER=openai`, `OPENAI_API_KEY=...`, `ANTHROPIC_API_KEY=...` and restart.
+- The admin dashboard's **Setup check** shows which service and models are in use.
 - Email (Gmail): `EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend`, `EMAIL_HOST_USER=you@gmail.com`, `EMAIL_HOST_PASSWORD=<16-character app password>`, `DEFAULT_FROM_EMAIL=Voice Mock Test <you@gmail.com>`; then use **Send me a test email** on the admin dashboard.
 
 ## Tests

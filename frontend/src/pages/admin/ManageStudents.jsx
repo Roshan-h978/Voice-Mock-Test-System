@@ -71,7 +71,11 @@ export default function ManageStudents() {
         page,
         page_size: PAGE_SIZE,
       });
-      if (request === latestRequest.current) setData(response);
+      if (request === latestRequest.current) {
+        setData(response);
+        // The page asked for no longer exists (its last row was removed): the server sent the last page.
+        if (response.page && response.page !== page) setPage(response.page);
+      }
     } catch (err) {
       if (request === latestRequest.current) setError(getErrorMessage(err, 'The list could not be loaded.'));
     }

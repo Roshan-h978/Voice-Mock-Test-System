@@ -29,6 +29,7 @@ export default function SpeakingTest() {
   const [lastAnswer, setLastAnswer] = useState(null);
   const [error, setError] = useState('');
   const [exitOpen, setExitOpen] = useState(false);
+  const [notice, setNotice] = useState('');
 
   const questions = useMemo(() => attempt?.questions || [], [attempt]);
   const question = questions[index];
@@ -108,8 +109,31 @@ export default function SpeakingTest() {
         questions: current.questions.map((item) => (item.id === question.id ? { ...item, answered: true } : item)),
       }));
       setLastAnswer(answer);
+      setNotice('');
       setPhase('saved');
     } catch (err) {
+      if (err.response?.status === 404) {
+        // The teacher removed this question while it was open: reload the test and carry on.
+        try {
+          const fresh = await getAttempt(attempt.id);
+          if (fresh.status !== 'in_progress') {
+            navigate(`/student/results/${fresh.id}`, { replace: true });
+            return;
+          }
+          setAttempt(fresh);
+          const nextOpen = fresh.questions.findIndex((item) => !item.answered);
+          if (nextOpen === -1) {
+            setIndex(Math.max(0, fresh.questions.length - 1));
+            setPhase('saved');
+          } else {
+            beginQuestion(nextOpen, fresh.test.prep_seconds);
+          }
+          setNotice('Your teacher removed that question from the test. Your other answers are saved, so carry on.');
+          return;
+        } catch {
+          /* show the normal message below */
+        }
+      }
       setError(getErrorMessage(err, 'Your answer could not be saved. Please submit it again.'));
       if (err.response?.status === 422) {
         // The recording itself was the problem: ask for a new one.
@@ -186,6 +210,8 @@ export default function SpeakingTest() {
             ))}
           </div>
         </div>
+
+        {notice && <Alert tone="info">{notice}</Alert>}
 
         {phase === 'finishing' && <LoadingSpinner label="Preparing your results…" />}
 

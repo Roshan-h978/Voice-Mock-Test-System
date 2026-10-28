@@ -20,7 +20,7 @@ from .speech_to_text import (
     transcribe,
 )
 
-LIVE_KEYS = {"EVALUATION_DEMO_MODE": False, "OPENAI_API_KEY": "sk-test", "ANTHROPIC_API_KEY": "test-key"}
+LIVE_KEYS = {"EVALUATION_DEMO_MODE": False, "AI_PROVIDER": "openai", "OPENAI_API_KEY": "sk-test", "ANTHROPIC_API_KEY": "test-key"}
 
 
 def fake_response(status_code=200, payload=None, text=""):
@@ -149,3 +149,83 @@ class EvaluationConfigViewTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertNotIn("sk-", str(response.data))
         self.assertEqual(sum(response.data["weights"].values()), 100)
+
+
+
+# ---------------------------------------------------------------------------
+# Free Groq option (AI_PROVIDER=groq)
+# ---------------------------------------------------------------------------
+GROQ = {"EVALUATION_DEMO_MODE": False, "AI_PROVIDER": "groq", "GROQ_API_KEY": "gsk-test", "OPENAI_API_KEY": "", "ANTHROPIC_API_KEY": ""}
+
+
+def chat_payload(text):
+    return {"choices": [{"message": {"role": "assistant", "content": text}}]}
+
+
+@override_settings(**GROQ)
+class GroqTests(SimpleTestCase):
+    def test_transcription_uses_groq_whisper(self):
+        payload = {"text": "I like to read books in the evening.", "duration": 3.1, "segments": [{"start": 0, "end": 3, "text": "I like to read books in the evening."}]}
+        with mock.patch("apps.evaluation.speech_to_text.requests.post", return_value=fake_response(payload=payload)) as post:
+            transcript = transcribe(io.BytesIO(b"audio"), filename="answer.webm")
+        self.assertEqual(len(transcript.words), 8)
+        self.assertEqual(post.call_args.args[0], "https://api.groq.com/openai/v1/audio/transcriptions")
+        self.assertEqual(post.call_args.kwargs["headers"]["Authorization"], "Bearer gsk-test")
+        data = post.call_args.kwargs["data"]
+        self.assertEqual((data["model"], data["response_format"]), ("whisper-large-v3-turbo", "verbose_json"))
+        self.assertNotIn("timestamp_granularities[]", data)
+
+    def test_feedback_uses_groq_chat_in_json_mode(self):
+        reply = '{"grammar": 82, "coherence": 75, "relevance": 90, "strengths": ["You answered clearly."], "tip": "Add one example.", "corrections": []}'
+        with mock.patch("apps.evaluation.feedback.requests.post", return_value=fake_response(payload=chat_payload(reply))) as post:
+            result = feedback.analyse_answer(question="Q", transcript="I like books", level="beginner", measurements={})
+        self.assertEqual((result["grammar"], result["tip"]), (82, "Add one example."))
+        self.assertEqual(post.call_args.args[0], "https://api.groq.com/openai/v1/chat/completions")
+        body = post.call_args.kwargs["json"]
+        self.assertEqual(body["model"], "openai/gpt-oss-120b")
+        self.assertEqual(body["response_format"], {"type": "json_object"})
+        self.assertEqual(body["reasoning_effort"], "low")
+        self.assertEqual(body["messages"][0]["role"], "system")
+
+    def test_feedback_retries_without_optional_settings_after_a_400(self):
+        reply = '{"grammar": 70}'
+        responses = [fake_response(400, text="unsupported"), fake_response(payload=chat_payload(reply))]
+        with mock.patch("apps.evaluation.feedback.requests.post", side_effect=responses) as post:
+            result = feedback.analyse_answer(question="Q", transcript="I like books", level="", measurements={})
+        self.assertEqual(result["grammar"], 70)
+        second = post.call_args_list[1].kwargs["json"]
+        self.assertNotIn("response_format", second)
+        self.assertNotIn("reasoning_effort", second)
+
+    def test_rate_limit_is_retried_then_reported_as_busy(self):
+        with mock.patch("apps.evaluation.feedback.time.sleep"), mock.patch(
+            "apps.evaluation.feedback.requests.post", return_value=fake_response(429)
+        ) as post:
+            with self.assertRaises(EvaluationError):
+                feedback.analyse_answer(question="Q", transcript="I like books", level="", measurements={})
+        self.assertEqual(post.call_count, 2)
+
+    @override_settings(GROQ_API_KEY="")
+    def test_missing_groq_key_is_reported_as_not_configured(self):
+        with self.assertRaises(EvaluationNotConfigured):
+            transcribe(io.BytesIO(b"audio"))
+        with self.assertRaises(EvaluationNotConfigured):
+            feedback.analyse_answer(question="Q", transcript="text here", level="", measurements={})
+
+
+class GroqConfigViewTests(APITestCase):
+    def setUp(self):
+        admin = User.objects.create_user("nisha@example.com", "Speak-Clearly-2026", full_name="Nisha", role="admin")
+        self.client.force_authenticate(admin)
+
+    @override_settings(**GROQ)
+    def test_setup_check_reports_groq(self):
+        data = self.client.get(reverse("evaluation-config")).data
+        self.assertEqual(data["provider"], "groq")
+        self.assertTrue(data["speech_to_text_ready"] and data["feedback_ready"])
+        self.assertEqual(data["missing_keys"], [])
+        self.assertEqual((data["transcribe_model"], data["scoring_model"]), ("whisper-large-v3-turbo", "openai/gpt-oss-120b"))
+
+    @override_settings(**{**GROQ, "GROQ_API_KEY": ""})
+    def test_setup_check_names_the_missing_key(self):
+        self.assertEqual(self.client.get(reverse("evaluation-config")).data["missing_keys"], ["GROQ_API_KEY"])

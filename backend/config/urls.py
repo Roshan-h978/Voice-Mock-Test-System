@@ -3,6 +3,7 @@
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
+from django.db import DatabaseError, connection
 from django.http import JsonResponse
 from django.urls import include, path
 
@@ -12,8 +13,17 @@ admin.site.index_title = "Data management"
 
 
 def health_check(_request):
-    """Lightweight check for hosting platforms and uptime monitors."""
-    return JsonResponse({"status": "ok", "service": "voice-mock-test-api"})
+    """Check for hosting platforms and uptime monitors: the API answers and the database is reachable.
+
+    A monitor that opens this page every few minutes also keeps a free Render server and Supabase project awake.
+    """
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
+    except DatabaseError:
+        return JsonResponse({"status": "error", "service": "voice-mock-test-api", "database": "unavailable"}, status=503)
+    return JsonResponse({"status": "ok", "service": "voice-mock-test-api", "database": "ok"})
 
 
 urlpatterns = [

@@ -12,7 +12,13 @@ from apps.attempts.models import FINISHED_STATUSES
 from apps.common.utils import ServiceError
 
 from .models import MockTest, Question
-from .serializers import AdminQuestionSerializer, AdminTestSerializer, TestDetailSerializer, TestSummarySerializer
+from .serializers import (
+    ARCHIVED_QUESTIONS_MESSAGE,
+    AdminQuestionSerializer,
+    AdminTestSerializer,
+    TestDetailSerializer,
+    TestSummarySerializer,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -113,6 +119,8 @@ class AdminQuestionViewSet(viewsets.ModelViewSet):
 
     def perform_destroy(self, instance):
         test = instance.test
+        if test.status == MockTest.Status.ARCHIVED:
+            raise ServiceError(ARCHIVED_QUESTIONS_MESSAGE)
         if test.status == MockTest.Status.PUBLISHED and test.questions.count() <= 1:
             raise ServiceError("A published test needs at least one question. Move it back to draft first.")
         with transaction.atomic():
@@ -126,6 +134,8 @@ class AdminQuestionViewSet(viewsets.ModelViewSet):
         ordered_ids = request.data.get("order")
         if not isinstance(ordered_ids, list) or not all(isinstance(item, int) for item in ordered_ids):
             raise ValidationError({"order": "Send the question ids as a list, in the new order."})
+        if MockTest.objects.filter(pk=test_id, status=MockTest.Status.ARCHIVED).exists():
+            raise ServiceError(ARCHIVED_QUESTIONS_MESSAGE)
         current_ids = set(Question.objects.filter(test_id=test_id).values_list("id", flat=True))
         if not current_ids or set(ordered_ids) != current_ids or len(ordered_ids) != len(current_ids):
             raise ValidationError({"order": "The list must contain every question of this test exactly once."})

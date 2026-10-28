@@ -59,11 +59,34 @@ def api_exception_handler(exc, context):
 
 
 class StandardPagination(PageNumberPagination):
-    """Page-number pagination that also accepts ?page_size= (up to 100)."""
+    """Page-number pagination that also accepts ?page_size= (up to 100).
+
+    Responses also include "page" (the page actually returned) and "pages" (how many there are).
+    """
 
     page_size = 20
     page_size_query_param = "page_size"
     max_page_size = 100
+
+    def paginate_queryset(self, queryset, request, view=None):
+        try:
+            return super().paginate_queryset(queryset, request, view)
+        except NotFound:
+            # A page past the end, for example after the last row on it was suspended or reviewed:
+            # return the last page instead of an "Invalid page" error.
+            page_size = self.get_page_size(request)
+            if not page_size:
+                return None
+            paginator = self.django_paginator_class(queryset, page_size)
+            self.page = paginator.page(paginator.num_pages)
+            self.request = request
+            return list(self.page)
+
+    def get_paginated_response(self, data):
+        response = super().get_paginated_response(data)
+        response.data["page"] = self.page.number
+        response.data["pages"] = self.page.paginator.num_pages
+        return response
 
 
 # ---------------------------------------------------------------------------

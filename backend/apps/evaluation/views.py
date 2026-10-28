@@ -10,6 +10,8 @@ from apps.attempts.models import Answer
 from apps.attempts.serializers import AnswerSerializer
 from apps.attempts.services import rescore_answer
 
+from . import providers
+
 
 class EvaluationConfigView(APIView):
     """Shows whether scoring is set up and which rules are in use (no secrets)."""
@@ -18,13 +20,16 @@ class EvaluationConfigView(APIView):
 
     def get(self, request):
         rules = settings.SCORING
+        speech, feedback = providers.speech_to_text(), providers.feedback()
         return Response(
             {
                 "demo_mode": settings.EVALUATION_DEMO_MODE,
-                "speech_to_text_ready": bool(settings.OPENAI_API_KEY),
-                "feedback_ready": bool(settings.ANTHROPIC_API_KEY),
-                "transcribe_model": settings.TRANSCRIBE_MODEL,
-                "scoring_model": settings.SCORING_MODEL,
+                "provider": settings.AI_PROVIDER,
+                "speech_to_text_ready": bool(speech.api_key),
+                "feedback_ready": bool(feedback.api_key),
+                "missing_keys": sorted({s.key_setting for s in (speech, feedback) if not s.api_key}),
+                "transcribe_model": speech.model,
+                "scoring_model": feedback.model,
                 "weights": rules["WEIGHTS"],
                 "review_threshold": rules["REVIEW_THRESHOLD"],
                 "ideal_words_per_minute": [rules["IDEAL_WPM_MIN"], rules["IDEAL_WPM_MAX"]],

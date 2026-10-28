@@ -19,18 +19,17 @@ function ScoringStatus({ config }) {
   if (config.demo_mode) {
     return (
       <Alert tone="warning" title="Demo scoring is on">
-        Answers get sample scores. For real scoring, set EVALUATION_DEMO_MODE=False and add OPENAI_API_KEY and
-        ANTHROPIC_API_KEY in backend/.env, then restart the backend.
+        Answers get sample scores. For real scoring, set EVALUATION_DEMO_MODE=False in the backend settings and add a
+        key: AI_PROVIDER=groq with GROQ_API_KEY (free), or OPENAI_API_KEY and ANTHROPIC_API_KEY. Then restart the
+        backend.
       </Alert>
     );
   }
   if (!config.speech_to_text_ready || !config.feedback_ready) {
+    const keys = config.missing_keys?.length ? config.missing_keys.join(' and ') : 'the scoring key';
     return (
       <Alert tone="danger" title="Scoring isn't set up">
-        Add {!config.speech_to_text_ready ? 'OPENAI_API_KEY' : ''}
-        {!config.speech_to_text_ready && !config.feedback_ready ? ' and ' : ''}
-        {!config.feedback_ready ? 'ANTHROPIC_API_KEY' : ''} to backend/.env and restart the backend. Students can't
-        submit answers until then.
+        Add {keys} to the backend settings and restart the backend. Students can&apos;t submit answers until then.
       </Alert>
     );
   }
@@ -211,7 +210,11 @@ export default function AdminDashboard() {
               <h2 className="title-sm">Setup check</h2>
               {config && (
                 <p className="body-sm vmt-muted">
-                  Scoring: {config.demo_mode ? 'demo mode' : `${config.transcribe_model} + ${config.scoring_model}`}. Review below{' '}
+                  Scoring:{' '}
+                  {config.demo_mode
+                    ? 'demo mode'
+                    : `${config.provider === 'groq' ? 'Groq (free), ' : ''}${config.transcribe_model} + ${config.scoring_model}`}
+                  . Review below{' '}
                   {config.review_threshold}%.
                 </p>
               )}

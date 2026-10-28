@@ -28,7 +28,12 @@ export default function AttemptHistory() {
     setData(null);
     setError('');
     getMyAttempts({ status: filter || undefined, page, page_size: PAGE_SIZE })
-      .then((response) => active && setData(response))
+      .then((response) => {
+        if (!active) return;
+        setData(response);
+        // The page asked for no longer exists (its last row was removed): the server sent the last page.
+        if (response.page && response.page !== page) setPage(response.page);
+      })
       .catch((err) => active && setError(getErrorMessage(err)));
     return () => {
       active = false;

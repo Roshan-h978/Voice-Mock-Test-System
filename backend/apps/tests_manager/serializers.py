@@ -88,6 +88,9 @@ class TestDetailSerializer(TestSummarySerializer):
 # ---------------------------------------------------------------------------
 # Admin views
 # ---------------------------------------------------------------------------
+ARCHIVED_QUESTIONS_MESSAGE = "This test is archived. Move it back to draft before editing questions."
+
+
 class AdminQuestionSerializer(serializers.ModelSerializer):
     time_limit = serializers.IntegerField(read_only=True)
 
@@ -111,8 +114,15 @@ class AdminQuestionSerializer(serializers.ModelSerializer):
         if self.instance and test.pk != self.instance.test_id:
             raise serializers.ValidationError("A question can't move to another test.")
         if test.status == MockTest.Status.ARCHIVED:
-            raise serializers.ValidationError("This test is archived. Move it back to draft before editing questions.")
+            raise serializers.ValidationError(ARCHIVED_QUESTIONS_MESSAGE)
         return test
+
+    def validate(self, attrs):
+        # Also covers edits that don't send "test" (PATCH of the text, hint or time).
+        test = attrs.get("test") or getattr(self.instance, "test", None)
+        if test is not None and test.status == MockTest.Status.ARCHIVED:
+            raise serializers.ValidationError({"test": ARCHIVED_QUESTIONS_MESSAGE})
+        return attrs
 
 
 class AdminTestSerializer(serializers.ModelSerializer):

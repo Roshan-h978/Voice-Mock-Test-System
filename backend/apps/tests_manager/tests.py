@@ -99,6 +99,26 @@ class AdminTestManagementTests(APITestCase):
         self.assertEqual(self.client.get(reverse("admin-tests-list")).status_code, status.HTTP_403_FORBIDDEN)
 
 
+class ArchivedTestQuestionTests(APITestCase):
+    def setUp(self):
+        self.client.force_authenticate(make_admin())
+        self.test = make_test(status=MockTest.Status.ARCHIVED, questions=2)
+        self.first, self.second = self.test.questions.order_by("order")
+
+    def test_questions_of_an_archived_test_cannot_change(self):
+        url = reverse("admin-questions-detail", args=[self.first.id])
+        edit = self.client.patch(url, {"text": "A completely new question text."}, format="json")
+        self.assertEqual(edit.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(self.client.delete(url).status_code, status.HTTP_400_BAD_REQUEST)
+        reorder = self.client.post(
+            reverse("admin-questions-reorder"), {"test": self.test.id, "order": [self.second.id, self.first.id]}, format="json"
+        )
+        self.assertEqual(reorder.status_code, status.HTTP_400_BAD_REQUEST)
+        self.first.refresh_from_db()
+        self.assertEqual((self.first.order, self.test.questions.count()), (1, 2))
+        self.assertTrue(self.first.text.startswith("Question number 1"))
+
+
 class StudentTestTests(APITestCase):
     def setUp(self):
         self.student = make_student()

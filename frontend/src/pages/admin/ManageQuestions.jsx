@@ -320,12 +320,19 @@ export default function ManageQuestions() {
         )}
       </section>
 
-      {!archived && editingId === null && (
-        <section className="vmt-card vmt-stack" aria-labelledby="add-title">
+      {!archived && (
+        // Hidden (not removed) while another question is being edited, so a half-written new question is kept.
+        <section className="vmt-card vmt-stack" aria-labelledby="add-title" hidden={editingId !== null}>
           <h2 id="add-title" className="title-sm">
             Add a question
           </h2>
-          <QuestionForm initial={EMPTY_QUESTION} onSave={handleAdd} saving={saving} errors={formErrors} submitLabel="Add question" />
+          <QuestionForm
+            initial={EMPTY_QUESTION}
+            onSave={handleAdd}
+            saving={saving}
+            errors={editingId === null ? formErrors : {}}
+            submitLabel="Add question"
+          />
         </section>
       )}
 

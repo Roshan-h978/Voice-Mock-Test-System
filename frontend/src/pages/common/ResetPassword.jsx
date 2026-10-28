@@ -4,12 +4,14 @@ import Alert from '../../components/Alert';
 import AuthShell from '../../components/AuthShell';
 import Button from '../../components/Button';
 import TextField from '../../components/TextField';
+import { useAuth } from '../../context/AuthContext';
 import { getErrorMessage, getFieldErrors } from '../../services/api';
 import { confirmPasswordReset } from '../../services/authService';
 
 export default function ResetPassword() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { isAuthenticated, logout } = useAuth();
   const token = searchParams.get('token') || '';
   const [form, setForm] = useState({ password: '', confirm: '' });
   const [errors, setErrors] = useState({});
@@ -46,6 +48,8 @@ export default function ResetPassword() {
     setFormError('');
     try {
       const data = await confirmPasswordReset(token, form.password);
+      // Someone may still be signed in on this browser: sign out so the new password is used next.
+      if (isAuthenticated) await logout();
       navigate('/login', { replace: true, state: { notice: data.detail } });
     } catch (err) {
       const fieldErrors = getFieldErrors(err);

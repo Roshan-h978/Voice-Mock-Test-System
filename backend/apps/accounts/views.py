@@ -36,6 +36,7 @@ from .serializers import (
     PasswordResetRequestSerializer,
     ProfileUpdateSerializer,
     RegisterSerializer,
+    SafeTokenRefreshSerializer,
     UserSerializer,
 )
 
@@ -118,6 +119,8 @@ class GoogleLoginView(AuthThrottleMixin, APIView):
 
 class RefreshView(TokenRefreshView):
     """Exchange a refresh token for a new access token (and a new refresh token)."""
+
+    serializer_class = SafeTokenRefreshSerializer
 
 
 class LogoutView(APIView):

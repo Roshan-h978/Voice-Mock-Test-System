@@ -4,7 +4,8 @@ from django.conf import settings
 from django.contrib.auth import get_user_model, password_validation
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from rest_framework.exceptions import AuthenticationFailed
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, TokenRefreshSerializer
 
 from .models import AccountToken
 
@@ -267,3 +268,13 @@ class AdminUserSerializer(serializers.ModelSerializer):
 class GoogleLoginSerializer(serializers.Serializer):
     credential = serializers.CharField(max_length=4096)
     invite_token = serializers.CharField(required=False, allow_blank=True)
+
+
+class SafeTokenRefreshSerializer(TokenRefreshSerializer):
+    """Token refresh that answers 401 (not a server error) when the account was deleted."""
+
+    def validate(self, attrs):
+        try:
+            return super().validate(attrs)
+        except User.DoesNotExist:
+            raise AuthenticationFailed("No active account found for the given token.", "no_active_account") from None

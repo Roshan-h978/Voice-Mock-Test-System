@@ -1,4 +1,5 @@
 import { Check } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import Brand from './Brand';
 
 const POINTS = [
@@ -26,8 +27,8 @@ export default function AuthShell({ title, subtitle, children }) {
             ))}
           </ul>
         </div>
-        <span className="caption vmt-hide-sm" style={{ color: 'var(--on-navy-muted)' }}>
-          Your recordings are only used to score your answers.
+        <span className="caption vmt-hide-sm vmt-auth-note" style={{ color: 'var(--on-navy-muted)' }}>
+          Your recordings are only used to score your answers. <Link to="/privacy">Privacy</Link>
         </span>
       </aside>
       <main className="vmt-auth-panel">
