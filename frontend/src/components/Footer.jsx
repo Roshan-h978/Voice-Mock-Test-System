@@ -12,6 +12,7 @@ export default function Footer() {
           <Link to="/register">Create account</Link>
           <Link to="/forgot-password">Forgot password</Link>
           <Link to="/privacy">Privacy</Link>
+          <Link to="/terms">Terms</Link>
         </nav>
         <span>
           © {new Date().getFullYear()} {APP_NAME}. English speaking practice.

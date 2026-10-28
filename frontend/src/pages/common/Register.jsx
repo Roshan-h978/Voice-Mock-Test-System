@@ -137,6 +137,17 @@ export default function Register() {
         <Button type="submit" block loading={submitting}>
           {invitation ? 'Set up my account' : 'Create account'}
         </Button>
+        <p className="caption vmt-muted">
+          By creating an account you agree to the{' '}
+          <Link to="/terms" className="vmt-link">
+            terms of use
+          </Link>{' '}
+          and{' '}
+          <Link to="/privacy" className="vmt-link">
+            privacy notice
+          </Link>
+          .
+        </p>
       </form>
 
       <p className="body-sm vmt-muted">

@@ -17,6 +17,7 @@ import Login from './pages/common/Login';
 import Privacy from './pages/common/Privacy';
 import Register from './pages/common/Register';
 import ResetPassword from './pages/common/ResetPassword';
+import Terms from './pages/common/Terms';
 import AttemptHistory from './pages/student/AttemptHistory';
 import SpeakingTest from './pages/student/SpeakingTest';
 import StudentDashboard from './pages/student/StudentDashboard';
@@ -56,6 +57,7 @@ export default function App() {
         <Route path="/forgot-password" element={<GuestRoute><ForgotPassword /></GuestRoute>} />
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/privacy" element={<Privacy />} />
+        <Route path="/terms" element={<Terms />} />
 
         {/* Student: the speaking test is a focused page without the sidebar */}
         <Route path="/student/attempts/:attemptId" element={<ProtectedRoute role="student"><SpeakingTest /></ProtectedRoute>} />
