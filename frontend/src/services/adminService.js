@@ -13,6 +13,11 @@ export async function getEvaluationConfig() {
   return data;
 }
 
+export async function checkAiConnection() {
+  const { data } = await api.post('/evaluation/check/');
+  return data.results;
+}
+
 export async function sendTestEmail(to) {
   const { data } = await api.post('/notifications/test-email/', to ? { to } : {});
   return data;

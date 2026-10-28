@@ -126,49 +126,77 @@ def summarise_attempt(*, test_title: str, level: str, skills: dict, answers: lis
 
 
 def call_model(system: str, user_content: str, *, max_tokens: int = 800):
-    """Ask the configured feedback model and return the JSON object in its reply (or None)."""
-    if providers.uses_groq():
-        return call_chat_completions(system, user_content, max_tokens=max_tokens)
-    return call_claude(system, user_content, max_tokens=max_tokens)
+    """Ask the feedback model and return the JSON object in its reply (or None).
+
+    Tries the main service first; if it is busy, over its free limit, unreachable or not set up,
+    the free Gemini backup (GEMINI_API_KEY) answers instead.
+    """
+    services = providers.feedback_services()
+    last_error = None
+    for position, service in enumerate(services):
+        try:
+            if service.kind == providers.ANTHROPIC:
+                reply = call_claude(system, user_content, max_tokens=max_tokens)
+            else:
+                reply = call_chat_completions(service, system, user_content, max_tokens=max_tokens)
+        except EvaluationError as exc:  # includes EvaluationNotConfigured
+            last_error = exc
+            reply = None
+        if reply is not None:
+            return reply
+        if position + 1 < len(services):
+            logger.warning("%s gave no usable feedback; trying %s instead.", service.name, services[position + 1].name)
+    if last_error is not None:
+        raise last_error
+    return None
 
 
-def call_chat_completions(system: str, user_content: str, *, max_tokens: int = 800, tries: int = 2):
-    """OpenAI-compatible chat API (Groq). Returns the JSON object in the reply (or None)."""
-    service = providers.feedback()
+def chat_bodies(service, system: str, user_content: str, max_tokens: int) -> tuple[dict, dict]:
+    """The full request (JSON mode, low reasoning) and a basic one for services that refuse an option."""
+    messages = [{"role": "system", "content": system}, {"role": "user", "content": user_content}]
+    basic = {"model": service.model, "messages": messages, "temperature": 0.2, "max_tokens": max_tokens * 3}
+    full = dict(basic, response_format={"type": "json_object"})
+    if service.model.startswith("openai/gpt-oss") or service.name == "Gemini":
+        full["reasoning_effort"] = "low"  # quicker answers and fewer tokens on free tiers
+    return full, basic
+
+
+def post_chat(service, body: dict):
+    """One POST to an OpenAI-compatible /chat/completions endpoint."""
+    return requests.post(
+        f"{service.base_url}/chat/completions",
+        headers={"Authorization": f"Bearer {service.api_key}", "Content-Type": "application/json"},
+        json=body,
+        timeout=settings.AI_REQUEST_TIMEOUT,
+    )
+
+
+def call_chat_completions(service, system: str, user_content: str, *, max_tokens: int = 800, tries: int = 2):
+    """OpenAI-compatible chat API (Groq, Gemini). Returns the JSON object in the reply (or None)."""
     if not service.api_key:
         logger.error("%s is missing. Add it to backend/.env or set EVALUATION_DEMO_MODE=True.", service.key_setting)
         raise EvaluationNotConfigured()
 
-    url = f"{service.base_url}/chat/completions"
-    headers = {"Authorization": f"Bearer {service.api_key}", "Content-Type": "application/json"}
-    body = {
-        "model": service.model,
-        "messages": [{"role": "system", "content": system}, {"role": "user", "content": user_content}],
-        "temperature": 0.2,
-        "max_completion_tokens": max_tokens * 3,  # room for reasoning models to think before answering
-        "response_format": {"type": "json_object"},
-    }
-    if service.model.startswith("openai/gpt-oss"):
-        body["reasoning_effort"] = "low"  # quicker answers and fewer tokens on the free tier
+    body, basic = chat_bodies(service, system, user_content, max_tokens)
     simplified = False
-
     for attempt in range(1, tries + 1):
         try:
-            response = requests.post(url, headers=headers, json=body, timeout=settings.AI_REQUEST_TIMEOUT)
+            response = post_chat(service, body)
         except requests.RequestException as exc:
-            logger.warning("Feedback request failed (try %s): %s", attempt, exc)
+            logger.warning("%s feedback request failed (try %s): %s", service.name, attempt, exc)
             response = None
 
         if response is not None:
             if response.ok:
                 return parse_chat_reply(response.json())
-            logger.warning("Feedback model returned %s (try %s): %s", response.status_code, attempt, response.text[:300])
+            logger.warning(
+                "Feedback model returned %s from %s (try %s): %s", response.status_code, service.name, attempt, response.text[:300]
+            )
             if response.status_code in (401, 403):
                 raise EvaluationNotConfigured()
             if response.status_code == 400 and not simplified:
                 # The model may not accept an optional setting: try again with the basic request.
-                body = {key: value for key, value in body.items() if key not in ("response_format", "reasoning_effort")}
-                simplified = True
+                body, simplified = basic, True
                 continue
             if response.status_code not in RETRY_STATUS_CODES:
                 break

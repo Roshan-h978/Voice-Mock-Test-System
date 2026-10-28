@@ -44,8 +44,8 @@ export default function Privacy() {
               <li>Our hosting providers store the website, the database and the recordings for us.</li>
               <li>
                 When automatic scoring is switched on, your recording is sent to an AI service that turns speech into text and
-                writes feedback: Groq, or OpenAI and Anthropic, depending on how this site is set up. They process it to give
-                us the result.
+                writes feedback: Groq, or OpenAI and Anthropic, depending on how this site is set up. If that service is busy, the
+                transcript may be sent to Google Gemini instead. They process it to give us the result.
               </li>
               <li>The Google sign-in button is provided by Google and follows Google&apos;s own privacy policy.</li>
             </ul>

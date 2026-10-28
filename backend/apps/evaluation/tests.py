@@ -229,3 +229,95 @@ class GroqConfigViewTests(APITestCase):
     @override_settings(**{**GROQ, "GROQ_API_KEY": ""})
     def test_setup_check_names_the_missing_key(self):
         self.assertEqual(self.client.get(reverse("evaluation-config")).data["missing_keys"], ["GROQ_API_KEY"])
+
+
+# ---------------------------------------------------------------------------
+# Free Gemini backup and the "Test AI connection" button
+# ---------------------------------------------------------------------------
+GEMINI = {"GEMINI_API_KEY": "gem-test", "GEMINI_MODEL": "gemini-2.5-flash"}
+
+
+@override_settings(**GROQ, **GEMINI)
+class GeminiBackupTests(SimpleTestCase):
+    def test_busy_groq_hands_over_to_gemini(self):
+        reply = chat_payload('{"grammar": 66, "tip": "Speak a little slower."}')
+        responses = [fake_response(429), fake_response(429), fake_response(payload=reply)]
+        with mock.patch("apps.evaluation.feedback.time.sleep"), mock.patch(
+            "apps.evaluation.feedback.requests.post", side_effect=responses
+        ) as post:
+            result = feedback.analyse_answer(question="Q", transcript="I like books", level="", measurements={})
+        self.assertEqual((result["grammar"], result["tip"]), (66, "Speak a little slower."))
+        last = post.call_args_list[-1]
+        self.assertEqual(last.args[0], "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions")
+        self.assertEqual(last.kwargs["headers"]["Authorization"], "Bearer gem-test")
+        self.assertEqual(last.kwargs["json"]["model"], "gemini-2.5-flash")
+
+    @override_settings(GROQ_API_KEY="")
+    def test_gemini_answers_when_the_groq_key_is_missing(self):
+        with mock.patch("apps.evaluation.feedback.requests.post", return_value=fake_response(payload=chat_payload('{"grammar": 90}'))) as post:
+            result = feedback.analyse_answer(question="Q", transcript="I like books", level="", measurements={})
+        self.assertEqual(result["grammar"], 90)
+        self.assertEqual(post.call_count, 1)
+
+    def test_summary_uses_gemini_when_groq_is_down(self):
+        answer = mock.Mock(question_text="Q", overall=72, strengths=["You spoke clearly."], tip="Slow down.")
+        reply = chat_payload('{"summary": "Good work.", "strengths": ["A", "B"], "tip": "T", "next_step": "N"}')
+        with mock.patch("apps.evaluation.feedback.time.sleep"), mock.patch(
+            "apps.evaluation.feedback.requests.post", side_effect=[fake_response(503), fake_response(503), fake_response(payload=reply)]
+        ):
+            summary = feedback.summarise_attempt(test_title="T", level="", skills={"overall": 72}, answers=[answer])
+        self.assertEqual(summary["summary"], "Good work.")
+
+
+class ConnectionCheckTests(APITestCase):
+    def setUp(self):
+        admin = User.objects.create_user("nisha@example.com", "Speak-Clearly-2026", full_name="Nisha", role="admin")
+        self.client.force_authenticate(admin)
+
+    def check(self, responses):
+        with mock.patch("apps.evaluation.checks.requests.post", side_effect=responses) as post:
+            data = self.client.post(reverse("evaluation-check")).data["results"]
+        return data, post
+
+    @override_settings(**{**GROQ, **GEMINI, "EVALUATION_DEMO_MODE": True})
+    def test_all_services_working_even_in_demo_mode(self):
+        ok_chat = fake_response(payload=chat_payload('{"ok": true}'))
+        data, post = self.check([fake_response(payload={"text": ""}), ok_chat, ok_chat])
+        self.assertEqual([(r["step"], r["service"], r["status"]) for r in data], [
+            ("Speech-to-text", "Groq", "ok"), ("Written feedback", "Groq", "ok"), ("Feedback backup", "Gemini", "ok"),
+        ])
+        speech = post.call_args_list[0]
+        self.assertTrue(speech.args[0].endswith("/audio/transcriptions"))
+        self.assertEqual(speech.kwargs["files"]["file"][2], "audio/wav")
+
+    @override_settings(**GROQ)
+    def test_rejected_key_and_free_limit_are_explained(self):
+        data, _ = self.check([fake_response(401, payload={"error": {"message": "Invalid API Key"}}), fake_response(429)])
+        self.assertEqual(data[0]["status"], "error")
+        self.assertIn("GROQ_API_KEY", data[0]["detail"])
+        self.assertEqual(data[1]["status"], "warning")
+        self.assertIn("free limit", data[1]["detail"])
+        self.assertEqual(len(data), 2)  # no backup configured
+
+    @override_settings(**{**GROQ, "GROQ_API_KEY": ""})
+    def test_missing_key_is_named_without_calling_anything(self):
+        data, post = self.check([])
+        self.assertEqual(post.call_count, 0)
+        self.assertEqual(data[0]["detail"], "GROQ_API_KEY is not set.")
+
+    @override_settings(**GROQ)
+    def test_unreachable_service(self):
+        import requests
+
+        data, _ = self.check([requests.ConnectionError("down"), requests.ConnectionError("down")])
+        self.assertIn("Couldn't reach Groq", data[0]["detail"])
+
+    @override_settings(**GROQ)
+    def test_unknown_model_is_explained(self):
+        data, _ = self.check([fake_response(payload={"text": ""}), fake_response(404, payload={"error": {"message": "model not found"}})])
+        self.assertIn("doesn't know the model", data[1]["detail"])
+
+    def test_students_cannot_run_the_check(self):
+        student = User.objects.create_user("aarati@example.com", "Speak-Clearly-2026", full_name="Aarati")
+        self.client.force_authenticate(student)
+        self.assertEqual(self.client.post(reverse("evaluation-check")).status_code, 403)

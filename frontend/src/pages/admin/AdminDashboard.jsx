@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Award, ClipboardList, KeyRound, Mail, MessageSquare, Plus, UserPlus, Users } from 'lucide-react';
+import { Award, CircleCheck, CircleX, ClipboardList, KeyRound, Mail, MessageSquare, Plus, TriangleAlert, UserPlus, Users, Zap } from 'lucide-react';
 import Alert from '../../components/Alert';
 import Button from '../../components/Button';
 import EmptyState from '../../components/EmptyState';
@@ -9,7 +9,7 @@ import SkillBar from '../../components/SkillBar';
 import StatCard from '../../components/StatCard';
 import StatusBadge from '../../components/StatusBadge';
 import { useAuth } from '../../context/AuthContext';
-import { getDashboard, getEvaluationConfig, sendTestEmail } from '../../services/adminService';
+import { checkAiConnection, getDashboard, getEvaluationConfig, sendTestEmail } from '../../services/adminService';
 import { getErrorMessage } from '../../services/api';
 import { SKILLS } from '../../utils/constants';
 import { formatChange, formatDate, formatScore, pluralize } from '../../utils/formatters';
@@ -36,6 +36,29 @@ function ScoringStatus({ config }) {
   return null;
 }
 
+const CHECK_ICONS = { ok: CircleCheck, warning: TriangleAlert, error: CircleX };
+
+/** Results of "Test AI connection": one line per AI service. */
+function AiCheckResults({ results }) {
+  return (
+    <ul className="vmt-ai-checks" aria-label="AI connection results">
+      {results.map((item) => {
+        const Icon = CHECK_ICONS[item.status] || CircleX;
+        return (
+          <li key={item.step} className={`vmt-ai-check is-${item.status}`}>
+            <Icon className="vmt-icon-sm" aria-hidden="true" />
+            <span>
+              <strong>{item.step}</strong> · {item.service} <span className="vmt-muted">({item.model})</span>
+              <br />
+              {item.detail}
+            </span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 export default function AdminDashboard() {
   const { user } = useAuth();
   const [stats, setStats] = useState(null);
@@ -43,6 +66,20 @@ export default function AdminDashboard() {
   const [error, setError] = useState('');
   const [emailCheck, setEmailCheck] = useState(null);
   const [sendingEmail, setSendingEmail] = useState(false);
+  const [aiCheck, setAiCheck] = useState(null);
+  const [checkingAi, setCheckingAi] = useState(false);
+
+  const handleAiCheck = async () => {
+    setCheckingAi(true);
+    setAiCheck(null);
+    try {
+      setAiCheck({ results: await checkAiConnection() });
+    } catch (err) {
+      setAiCheck({ error: getErrorMessage(err, 'The AI connection test could not run.') });
+    } finally {
+      setCheckingAi(false);
+    }
+  };
 
   const handleTestEmail = async () => {
     setSendingEmail(true);
@@ -214,10 +251,14 @@ export default function AdminDashboard() {
                   {config.demo_mode
                     ? 'demo mode'
                     : `${config.provider === 'groq' ? 'Groq (free), ' : ''}${config.transcribe_model} + ${config.scoring_model}`}
-                  . Review below{' '}
-                  {config.review_threshold}%.
+                  {config.feedback_backup ? `, backup ${config.feedback_backup}` : ''}. Review below {config.review_threshold}%.
                 </p>
               )}
+              {aiCheck?.results && <AiCheckResults results={aiCheck.results} />}
+              {aiCheck?.error && <Alert tone="danger">{aiCheck.error}</Alert>}
+              <Button variant="secondary" icon={Zap} loading={checkingAi} onClick={handleAiCheck}>
+                Test AI connection
+              </Button>
               {emailCheck && <Alert tone={emailCheck.tone}>{emailCheck.text}</Alert>}
               <Button variant="secondary" icon={Mail} loading={sendingEmail} onClick={handleTestEmail}>
                 Send me a test email

@@ -386,6 +386,14 @@ audio { width: 100%; height: 40px; }
 .vmt-navbar-inner { max-width: var(--content-max); margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: 12px var(--space-3); }
 .vmt-navbar .vmt-brand { color: var(--navy); padding: 0; }
 .vmt-navbar-links { display: flex; align-items: center; gap: var(--space-1); }
+/* "Test AI connection" results on the admin dashboard */
+.vmt-ai-checks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.vmt-ai-check { display: flex; gap: 8px; align-items: flex-start; font: 400 14px/20px var(--font-sans); padding: 8px 10px; border-radius: var(--radius-control); background: var(--page); }
+.vmt-ai-check > svg { flex: none; margin-top: 2px; }
+.vmt-ai-check.is-ok > svg { color: var(--teal-strong); }
+.vmt-ai-check.is-warning > svg { color: var(--warning, #b7791f); }
+.vmt-ai-check.is-error > svg { color: var(--danger, #c53030); }
+
 /* Long-form text pages (privacy) */
 .vmt-prose { max-width: 760px; width: 100%; margin: 0 auto; display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-4); }
 .vmt-prose section { display: flex; flex-direction: column; gap: var(--space-1); }

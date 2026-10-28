@@ -86,18 +86,7 @@ def transcribe(audio, *, filename: str = "answer.webm", content_type: str = "aud
         logger.error("%s is missing. Add it to backend/.env or set EVALUATION_DEMO_MODE=True.", service.key_setting)
         raise EvaluationNotConfigured()
 
-    model = service.model
-    verbose = model.startswith("whisper")  # only whisper models return segment timings
-    data = {
-        "model": model,
-        "language": "en",
-        "temperature": "0",
-        "response_format": "verbose_json" if verbose else "json",
-    }
-    if verbose and not providers.uses_groq():  # Groq returns segments without this option
-        data["timestamp_granularities[]"] = "segment"
-
-    payload = _request_transcription(service, audio, filename, content_type, data)
+    payload = _request_transcription(service, audio, filename, content_type, transcription_fields(service))
     segments = [
         Segment(
             start=_number(item.get("start")) or 0.0,
@@ -116,6 +105,20 @@ def transcribe(audio, *, filename: str = "answer.webm", content_type: str = "aud
     if len(transcript.words) < 2:
         raise NoSpeechDetected()
     return transcript
+
+
+def transcription_fields(service) -> dict:
+    """Form fields for an OpenAI-compatible /audio/transcriptions request."""
+    verbose = service.model.startswith("whisper")  # only whisper models return segment timings
+    data = {
+        "model": service.model,
+        "language": "en",
+        "temperature": "0",
+        "response_format": "verbose_json" if verbose else "json",
+    }
+    if verbose and not providers.uses_groq():  # Groq returns segments without this option
+        data["timestamp_granularities[]"] = "segment"
+    return data
 
 
 def _request_transcription(service, audio, filename, content_type, data, tries: int = 2) -> dict:

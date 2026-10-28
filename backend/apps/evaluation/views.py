@@ -10,7 +10,7 @@ from apps.attempts.models import Answer
 from apps.attempts.serializers import AnswerSerializer
 from apps.attempts.services import rescore_answer
 
-from . import providers
+from . import checks, providers
 
 
 class EvaluationConfigView(APIView):
@@ -30,12 +30,22 @@ class EvaluationConfigView(APIView):
                 "missing_keys": sorted({s.key_setting for s in (speech, feedback) if not s.api_key}),
                 "transcribe_model": speech.model,
                 "scoring_model": feedback.model,
+                "feedback_backup": f"{backup.name} {backup.model}" if (backup := providers.feedback_backup()) else None,
                 "weights": rules["WEIGHTS"],
                 "review_threshold": rules["REVIEW_THRESHOLD"],
                 "ideal_words_per_minute": [rules["IDEAL_WPM_MIN"], rules["IDEAL_WPM_MAX"]],
                 "min_words": rules["MIN_WORDS"],
             }
         )
+
+
+class ConnectionCheckView(APIView):
+    """Sends one small test request to each AI service and reports which ones work."""
+
+    permission_classes = [IsAdmin]
+
+    def post(self, request):
+        return Response({"results": checks.run_all()})
 
 
 class RescoreAnswerView(APIView):

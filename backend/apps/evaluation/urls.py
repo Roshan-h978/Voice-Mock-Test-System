@@ -6,5 +6,6 @@ from . import views
 
 urlpatterns = [
     path("config/", views.EvaluationConfigView.as_view(), name="evaluation-config"),
+    path("check/", views.ConnectionCheckView.as_view(), name="evaluation-check"),
     path("answers/<int:pk>/rescore/", views.RescoreAnswerView.as_view(), name="evaluation-rescore-answer"),
 ]

@@ -54,6 +54,8 @@ flowchart LR
 - **Overall score** = 40% fluency + 30% pronunciation + 30% grammar. The weights can be changed in `backend/.env`.
 - **Flagged for review:** an answer is sent to the review queue when its score is under 65%, it's very short, the audio is hard to hear, or it may be off topic.
 - **Free scoring:** with `AI_PROVIDER=groq`, one free Groq key runs both steps (Whisper speech-to-text and the open gpt-oss model for feedback).
+- **Free backup:** with `GEMINI_API_KEY` set, Google Gemini writes the feedback whenever Groq is busy or over its free limit.
+- **Test AI connection:** a button on the admin dashboard sends one small request to each service and shows ✓ or ✗.
 - **Paid scoring:** with `AI_PROVIDER=openai`, OpenAI speech-to-text and Anthropic Claude feedback.
 - **Demo mode** (`EVALUATION_DEMO_MODE=True`) skips the AI calls and returns sample scores, so the app can be run and shown without any keys.
 
@@ -97,7 +99,7 @@ Every page works on phones, with a slide-out menu.
 | Database | PostgreSQL (local or Supabase); SQLite for quick local runs |
 | Frontend | React 19, Vite 8, React Router 7, Axios, Lucide icons, plain CSS with design tokens |
 | Speech-to-text | Whisper: `whisper-large-v3-turbo` on Groq (free) or OpenAI `whisper-1` |
-| Feedback | `openai/gpt-oss-120b` on Groq (free) or Anthropic Claude `claude-haiku-5-5` |
+| Feedback | `openai/gpt-oss-120b` on Groq (free, with Gemini as a free backup) or Anthropic Claude `claude-haiku-5-5` |
 | Sign-in | Email and password, Google Identity Services |
 | Storage | Local `media/` folder or S3-compatible storage (django-storages) |
 | Email | Django SMTP (for example Gmail) or n8n webhooks |
@@ -150,6 +152,7 @@ More detail:
 | `GOOGLE_CLIENT_ID` | Turns on the Google sign-in button |
 | `EVALUATION_DEMO_MODE` | `True` = sample scores; `False` = real scoring |
 | `AI_PROVIDER`, `GROQ_API_KEY` | `groq` + a free Groq key for real scoring |
+| `GEMINI_API_KEY` | Optional free backup for the feedback (Google AI Studio key) |
 | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` | For `AI_PROVIDER=openai` (paid) instead |
 | `EMAIL_BACKEND`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD` | Real email for invitations, password resets and reviews |
 | `REVIEW_THRESHOLD`, `SCORE_WEIGHT_*` | When answers are flagged and how the overall score is weighted |
