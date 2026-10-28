@@ -1,7 +1,7 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import * as authService from '../services/authService';
 import { tokenStore } from '../services/api';
-import { SESSION_EXPIRED_EVENT } from '../utils/constants';
+import { SESSION_EXPIRED_EVENT, STORAGE_KEYS, homeFor } from '../utils/constants';
 
 const AuthContext = createContext(null);
 
@@ -27,6 +27,35 @@ export function AuthProvider({ children }) {
     return () => {
       active = false;
     };
+  }, []);
+
+  // Another tab in this browser signed in as someone else, or signed out. Follow it straight away, so this tab
+  // never keeps showing one account while sending requests as another (for example a student's test page
+  // after an admin signed in in a second tab).
+  const userRef = useRef(user);
+  userRef.current = user;
+  useEffect(() => {
+    const handleStorage = (event) => {
+      if (event.key !== null && event.key !== STORAGE_KEYS.refresh) return;
+      if (!authService.hasSession()) {
+        if (userRef.current) setUser(null);
+        return;
+      }
+      authService
+        .getMe()
+        .then((me) => {
+          const current = userRef.current;
+          if (current && current.id === me.id) {
+            setUser(me);
+            return;
+          }
+          // A different account (or a sign-in after being signed out): start fresh on that account's home page.
+          window.location.replace(homeFor(me));
+        })
+        .catch(() => {});
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
   }, []);
 
   // The API client fires this event when the session can't be refreshed.
