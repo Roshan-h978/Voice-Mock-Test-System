@@ -149,12 +149,17 @@ class AdminAttemptListView(generics.ListAPIView):
         return queryset.order_by(F("submitted_at").desc(nulls_last=True), "-started_at")
 
 
-class AdminAttemptDetailView(generics.RetrieveAPIView):
+class AdminAttemptDetailView(generics.RetrieveDestroyAPIView):
+    """View one result, or delete it with its answers and recordings."""
+
     permission_classes = [IsAdmin]
     serializer_class = AdminAttemptDetailSerializer
 
     def get_queryset(self):
         return detail_queryset()
+
+    def perform_destroy(self, instance):
+        services.delete_attempts(Attempt.objects.filter(pk=instance.pk))
 
 
 class AdminReviewView(APIView):

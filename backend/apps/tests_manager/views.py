@@ -9,6 +9,7 @@ from rest_framework.response import Response
 
 from apps.accounts.permissions import IsAdmin
 from apps.attempts.models import FINISHED_STATUSES
+from apps.attempts.services import delete_attempts
 from apps.common.utils import ServiceError
 
 from .models import MockTest, Question
@@ -91,13 +92,17 @@ class AdminTestViewSet(viewsets.ModelViewSet):
         serializer.save(created_by=self.request.user)
 
     def destroy(self, request, *args, **kwargs):
+        """A test that students have taken is deleted only with ?with_results=true (its results go too)."""
         test = self.get_object()
-        if test.attempts.exists():
+        with_results = request.query_params.get("with_results", "").lower() in ("1", "true", "yes")
+        if test.attempts.exists() and not with_results:
             raise ServiceError(
-                "Students have taken this test, so it can't be deleted. Archive it instead.",
+                "Students have taken this test. Archive it to keep their results, or delete it together with its results.",
                 status_code=status.HTTP_409_CONFLICT,
             )
-        test.delete()
+        with transaction.atomic():
+            delete_attempts(test.attempts.all())
+            test.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

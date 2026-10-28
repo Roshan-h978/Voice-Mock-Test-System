@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Award, ClipboardList, Mic, PlayCircle, TrendingUp } from 'lucide-react';
+import { Award, ClipboardList, KeyRound, Mic, PlayCircle, TrendingUp } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import Alert from '../../components/Alert';
 import Button from '../../components/Button';
@@ -61,6 +61,18 @@ export default function StudentDashboard() {
             Try again
           </button>
         </Alert>
+      )}
+
+      {user?.uses_default_password && (
+        <div className="vmt-banner" style={{ background: 'var(--warning-tint)' }}>
+          <div className="vmt-stack vmt-stack-sm">
+            <span className="title-sm">Choose your own password</span>
+            <span className="body-sm vmt-muted">Your teacher set your current password. Change it to one only you know.</span>
+          </div>
+          <Button to="/student/profile" icon={KeyRound}>
+            Change password
+          </Button>
+        </div>
       )}
 
       {!loading && !error && stats && (

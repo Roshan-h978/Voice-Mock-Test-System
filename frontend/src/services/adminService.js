@@ -35,6 +35,17 @@ export async function updateUser(userId, changes) {
   return data;
 }
 
+/** Adds a person directly. payload: { email, full_name, role, level, phone?, password } */
+export async function createUser(payload) {
+  const { data } = await api.post('/admin/users/', payload);
+  return data;
+}
+
+/** Deletes the account with all its results and recordings. */
+export async function deleteUser(userId) {
+  await api.delete(`/admin/users/${userId}/`);
+}
+
 /** payload: { email, full_name?, role } */
 export async function inviteUser(payload) {
   const { data } = await api.post('/admin/users/invite/', payload);
@@ -62,8 +73,9 @@ export async function updateTest(testId, changes) {
   return data;
 }
 
-export async function deleteTest(testId) {
-  await api.delete(`/admin/tests/${testId}/`);
+/** withResults: also delete the results students have for this test (otherwise the server refuses). */
+export async function deleteTest(testId, { withResults = false } = {}) {
+  await api.delete(`/admin/tests/${testId}/`, { params: withResults ? { with_results: 'true' } : undefined });
 }
 
 // ---- Questions -----------------------------------------------------------
@@ -101,6 +113,11 @@ export async function getAttempts(params = {}) {
 export async function getAttempt(attemptId) {
   const { data } = await api.get(`/admin/attempts/${attemptId}/`);
   return data;
+}
+
+/** Deletes one result with its answers and recordings. */
+export async function deleteAttempt(attemptId) {
+  await api.delete(`/admin/attempts/${attemptId}/`);
 }
 
 /** payload: { fluency?, pronunciation?, grammar?, strengths?, tip?, next_step?, reviewer_note?, notify_student? } */

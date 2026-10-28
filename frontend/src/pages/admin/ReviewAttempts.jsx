@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useState } from 'react';
-import { MessageSquare, RefreshCw, Search, Send } from 'lucide-react';
-import { useParams } from 'react-router-dom';
+import { MessageSquare, RefreshCw, Search, Send, Trash2 } from 'lucide-react';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import Alert from '../../components/Alert';
 import AnswerDetails from '../../components/AnswerDetails';
 import Button from '../../components/Button';
 import EmptyState from '../../components/EmptyState';
 import LoadingSpinner from '../../components/LoadingSpinner';
+import Modal from '../../components/Modal';
 import PageHeader from '../../components/PageHeader';
 import ScoreRing from '../../components/ScoreRing';
 import SkillBar from '../../components/SkillBar';
 import StatusBadge from '../../components/StatusBadge';
 import TextField from '../../components/TextField';
-import { getAttempt, getAttempts, getEvaluationConfig, rescoreAnswer, reviewAttempt } from '../../services/adminService';
+import { deleteAttempt, getAttempt, getAttempts, getEvaluationConfig, rescoreAnswer, reviewAttempt } from '../../services/adminService';
 import { getErrorMessage, getFieldErrors } from '../../services/api';
 import { DEFAULT_WEIGHTS, PAGE_SIZE, SKILLS } from '../../utils/constants';
 import { formatDateTime, formatScore, headlineFor, levelLabel, overallFromSkills } from '../../utils/formatters';
@@ -23,10 +24,38 @@ const QUEUE_TABS = [
   { value: '', label: 'All' },
 ];
 
+/** "Delete this result?" dialog, shared by the queue and the review page. */
+function DeleteResultModal({ attempt, deleting, onCancel, onConfirm }) {
+  return (
+    <Modal
+      open={Boolean(attempt)}
+      title={`Delete ${attempt?.student.full_name}'s result?`}
+      description={`Their answers, recordings, scores and any review for "${attempt?.test.title}" are removed for good. They can take the test again if it's still published.`}
+      onClose={onCancel}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button variant="danger" icon={Trash2} loading={deleting} onClick={onConfirm}>
+            Delete result
+          </Button>
+        </>
+      }
+    />
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Review queue
 // ---------------------------------------------------------------------------
 function ReviewQueue() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [notice, setNotice] = useState(location.state?.notice || '');
+  const [reloadKey, setReloadKey] = useState(0);
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
   const [status, setStatus] = useState('needs_review');
   const [searchText, setSearchText] = useState('');
   const [search, setSearch] = useState('');
@@ -41,6 +70,11 @@ function ReviewQueue() {
     }, 300);
     return () => clearTimeout(timer);
   }, [searchText]);
+
+  // A notice handed over by the review page (after a delete) is shown once, not again on refresh.
+  useEffect(() => {
+    if (location.state?.notice) navigate(location.pathname, { replace: true });
+  }, [location, navigate]);
 
   useEffect(() => {
     let active = true;
@@ -57,7 +91,22 @@ function ReviewQueue() {
     return () => {
       active = false;
     };
-  }, [status, search, page]);
+  }, [status, search, page, reloadKey]);
+
+  const removeResult = async () => {
+    const target = confirmDelete;
+    setDeleting(true);
+    try {
+      await deleteAttempt(target.id);
+      setNotice(`${target.student.full_name}'s result for "${target.test.title}" was deleted.`);
+      setReloadKey((key) => key + 1);
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setDeleting(false);
+      setConfirmDelete(null);
+    }
+  };
 
   const totalPages = data ? Math.max(1, Math.ceil(data.count / PAGE_SIZE)) : 1;
 
@@ -105,6 +154,11 @@ function ReviewQueue() {
         </div>
       </div>
 
+      {notice && (
+        <Alert tone="success" onClose={() => setNotice('')}>
+          {notice}
+        </Alert>
+      )}
       {error && <Alert tone="danger">{error}</Alert>}
       {!data && !error && <LoadingSpinner label="Loading…" />}
 
@@ -160,9 +214,20 @@ function ReviewQueue() {
                       <StatusBadge kind="attempt" status={attempt.status} />
                     </td>
                     <td className="is-actions">
-                      <Button size="sm" variant={attempt.status === 'needs_review' ? 'primary' : 'secondary'} to={`/admin/reviews/${attempt.id}`}>
-                        {attempt.status === 'needs_review' ? 'Review' : 'Open'}
-                      </Button>
+                      <div className="vmt-row vmt-row-tight" style={{ justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
+                        <Button size="sm" variant={attempt.status === 'needs_review' ? 'primary' : 'secondary'} to={`/admin/reviews/${attempt.id}`}>
+                          {attempt.status === 'needs_review' ? 'Review' : 'Open'}
+                        </Button>
+                        <button
+                          type="button"
+                          className="vmt-icon-btn vmt-icon-btn-sm"
+                          onClick={() => setConfirmDelete(attempt)}
+                          aria-label={`Delete ${attempt.student.full_name}'s result`}
+                          title="Delete"
+                        >
+                          <Trash2 className="vmt-icon" aria-hidden="true" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -186,6 +251,7 @@ function ReviewQueue() {
           )}
         </>
       )}
+      <DeleteResultModal attempt={confirmDelete} deleting={deleting} onCancel={() => setConfirmDelete(null)} onConfirm={removeResult} />
     </>
   );
 }
@@ -208,7 +274,10 @@ function formFromAttempt(attempt) {
 }
 
 function ReviewDetail({ attemptId }) {
+  const navigate = useNavigate();
   const [attempt, setAttempt] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [weights, setWeights] = useState(DEFAULT_WEIGHTS);
   const [form, setForm] = useState(null);
   const [errors, setErrors] = useState({});
@@ -292,6 +361,18 @@ function ReviewDetail({ attemptId }) {
     }
   };
 
+  const removeResult = async () => {
+    setDeleting(true);
+    try {
+      await deleteAttempt(attempt.id);
+      navigate('/admin/reviews', { state: { notice: `${attempt.student.full_name}'s result for "${attempt.test.title}" was deleted.` } });
+    } catch (err) {
+      setError(getErrorMessage(err));
+      setDeleting(false);
+      setConfirmDelete(false);
+    }
+  };
+
   if (!attempt && error) {
     return (
       <>
@@ -312,7 +393,20 @@ function ReviewDetail({ attemptId }) {
         overline="Review"
         title={attempt.student.full_name}
         subtitle={`${attempt.test.title} · ${levelLabel(attempt.student.level)} · submitted ${formatDateTime(attempt.submitted_at)}`}
-        actions={<StatusBadge kind="attempt" status={attempt.status} />}
+        actions={
+          <>
+            <StatusBadge kind="attempt" status={attempt.status} />
+            <Button size="sm" variant="secondary" icon={Trash2} onClick={() => setConfirmDelete(true)}>
+              Delete result
+            </Button>
+          </>
+        }
+      />
+      <DeleteResultModal
+        attempt={confirmDelete ? attempt : null}
+        deleting={deleting}
+        onCancel={() => setConfirmDelete(false)}
+        onConfirm={removeResult}
       />
 
       {attempt.status === 'in_progress' && (

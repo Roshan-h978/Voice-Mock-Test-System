@@ -212,10 +212,49 @@ class InvitationInfoSerializer(serializers.ModelSerializer):
 # ---------------------------------------------------------------------------
 # Admin user management
 # ---------------------------------------------------------------------------
+class AdminUserCreateSerializer(serializers.ModelSerializer):
+    """An admin adds a student or admin directly, with a starting password to share with them."""
+
+    password = serializers.CharField(write_only=True, trim_whitespace=False)
+
+    class Meta:
+        model = User
+        fields = ("email", "full_name", "role", "level", "phone", "password")
+        extra_kwargs = {"email": {"validators": []}}  # the friendlier duplicate message below
+
+    def validate_email(self, value):
+        email = value.strip().lower()
+        if User.objects.filter(email__iexact=email).exists():
+            raise serializers.ValidationError("This person already has an account.")
+        return email
+
+    def validate_full_name(self, value):
+        return _clean_name(value)
+
+    def validate_phone(self, value):
+        return value.strip()
+
+    def validate(self, attrs):
+        candidate = User(email=attrs["email"], full_name=attrs["full_name"])
+        try:
+            _check_password(attrs["password"], candidate)
+        except serializers.ValidationError as exc:
+            raise serializers.ValidationError({"password": exc.detail}) from exc
+        return attrs
+
+    def create(self, validated_data):
+        password = validated_data.pop("password")
+        user = User.objects.create_user(password=password, **validated_data)
+        user.uses_default_password = True  # they're asked to choose their own password after signing in
+        user.save(update_fields=["uses_default_password"])
+        return user
+
+
 class AdminUserSerializer(serializers.ModelSerializer):
     attempt_count = serializers.SerializerMethodField()
     average_score = serializers.SerializerMethodField()
     last_attempt_at = serializers.SerializerMethodField()
+    password = serializers.CharField(write_only=True, required=False, allow_blank=True, trim_whitespace=False)
 
     class Meta:
         model = User
@@ -232,6 +271,7 @@ class AdminUserSerializer(serializers.ModelSerializer):
             "attempt_count",
             "average_score",
             "last_attempt_at",
+            "password",
         )
         read_only_fields = ("id", "email", "date_joined", "last_login")
 
@@ -248,13 +288,25 @@ class AdminUserSerializer(serializers.ModelSerializer):
     def validate_full_name(self, value):
         return _clean_name(value)
 
+    def validate_phone(self, value):
+        return value.strip()
+
     def validate(self, attrs):
         current_user = self.context["request"].user
+        if not attrs.get("password"):
+            attrs.pop("password", None)  # left empty: keep the current password
         if self.instance and self.instance.pk == current_user.pk:
             if attrs.get("is_active") is False:
                 raise serializers.ValidationError({"is_active": "You can't suspend your own account."})
             if "role" in attrs and attrs["role"] != self.instance.role:
                 raise serializers.ValidationError({"role": "You can't change your own role."})
+            if "password" in attrs:
+                raise serializers.ValidationError({"password": "Change your own password on your Profile page."})
+        if "password" in attrs and self.instance:
+            try:
+                _check_password(attrs["password"], self.instance)
+            except serializers.ValidationError as exc:
+                raise serializers.ValidationError({"password": exc.detail}) from exc
         return attrs
 
     def update(self, instance, validated_data):
@@ -262,6 +314,10 @@ class AdminUserSerializer(serializers.ModelSerializer):
         if validated_data.get("role") == User.Role.STUDENT:
             validated_data["is_staff"] = False
             validated_data["is_superuser"] = False
+        password = validated_data.pop("password", None)
+        if password:
+            instance.set_password(password)
+            instance.uses_default_password = True  # a password someone else chose: they're asked to change it
         return super().update(instance, validated_data)
 
 

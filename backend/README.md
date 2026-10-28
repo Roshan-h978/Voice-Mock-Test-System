@@ -30,6 +30,17 @@ Lost the admin? `python manage.py create_admin --email you@example.com --passwor
 
 Raw data (all tables) is in the Django admin: http://127.0.0.1:8000/admin/ with the admin account.
 
+### What admins can manage
+
+| | Create | View | Update | Delete |
+| --- | --- | --- | --- | --- |
+| People (**Students**) | **Add person** (with a starting password) or **Invite** by email | list, search, filters | **Edit**: name, level, role, phone, new password; **Suspend** | trash icon: the account with all its results and recordings |
+| Tests (**Mock tests**) | **New test** | list, preview | **Edit**, publish, archive | trash icon; a test with results asks before deleting them too |
+| Questions | **Add question** | per test | edit, reorder | delete |
+| Results (**Reviews**) | taken by students | queue, filters | **Publish review**, score again | trash icon or **Delete result**: answers and recordings go too |
+
+Admins can't delete or suspend their own account. People given a password by an admin are asked to choose their own after signing in.
+
 ## Connect PostgreSQL
 
 The app uses SQLite (`backend/db.sqlite3`) until you set `DATABASE_URL` in `backend/.env`. The tables are created by `python manage.py migrate`; you don't write any SQL yourself.

@@ -85,11 +85,25 @@ class AdminTestManagementTests(APITestCase):
         response = self.client.delete(reverse("admin-questions-detail", args=[test.questions.first().id]))
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_test_with_attempts_cannot_be_deleted(self):
+    def test_test_with_attempts_needs_with_results_to_be_deleted(self):
         test = make_test()
         Attempt.objects.create(student=make_student(), test=test)
         response = self.client.delete(reverse("admin-tests-detail", args=[test.id]))
         self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertIn("Archive it", response.data["detail"])
+        self.assertTrue(MockTest.objects.filter(pk=test.id).exists())
+
+    def test_test_deleted_together_with_its_results(self):
+        test = make_test()
+        other = make_test(title="Job interview")
+        student = make_student()
+        Attempt.objects.create(student=student, test=test, status=Attempt.Status.SCORED, overall=70)
+        kept = Attempt.objects.create(student=student, test=other)
+        response = self.client.delete(reverse("admin-tests-detail", args=[test.id]) + "?with_results=true")
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(MockTest.objects.filter(pk=test.id).exists())
+        self.assertFalse(Question.objects.filter(test_id=test.id).exists())
+        self.assertEqual(list(Attempt.objects.values_list("pk", flat=True)), [kept.pk])
 
     def test_question_list_needs_a_test_id(self):
         self.assertEqual(self.client.get(reverse("admin-questions-list")).status_code, status.HTTP_400_BAD_REQUEST)

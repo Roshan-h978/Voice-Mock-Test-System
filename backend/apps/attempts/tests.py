@@ -265,3 +265,76 @@ class ReviewAndReportTests(AttemptTestCase):
         response = self.client.post(reverse("evaluation-rescore-answer", args=[answer.id]))
         self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
         self.assertIn("recording for this answer is missing", response.data["detail"])
+
+
+class AdminDeleteTests(AttemptTestCase):
+    """Deleting a result, a person or a test removes the answers and the recording files too."""
+
+    def finished_attempt(self):
+        attempt_id = self.start()
+        self.answer_all(attempt_id)
+        self.client.post(reverse("attempt-submit", args=[attempt_id]))
+        names = list(Answer.objects.filter(attempt_id=attempt_id).values_list("audio", flat=True))
+        self.assertEqual(len(names), 2)
+        storage = Answer._meta.get_field("audio").storage
+        self.assertTrue(all(storage.exists(name) for name in names))
+        return attempt_id, names, storage
+
+    def test_admin_deletes_a_result_with_its_recordings(self):
+        attempt_id, names, storage = self.finished_attempt()
+        self.client.force_authenticate(self.admin)
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.delete(reverse("admin-attempt-detail", args=[attempt_id]))
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Attempt.objects.filter(pk=attempt_id).exists())
+        self.assertFalse(Answer.objects.filter(attempt_id=attempt_id).exists())
+        self.assertFalse(any(storage.exists(name) for name in names))
+        self.assertEqual(self.client.get(reverse("admin-attempt-detail", args=[attempt_id])).status_code, status.HTTP_404_NOT_FOUND)
+        # The student no longer sees it either.
+        self.client.force_authenticate(self.student)
+        self.assertEqual(self.client.get(reverse("attempt-list")).data["count"], 0)
+
+    def test_deleting_an_unfinished_test_lets_the_student_start_again(self):
+        attempt_id = self.start()
+        self.answer(attempt_id, self.questions[0])
+        self.client.force_authenticate(self.admin)
+        with self.captureOnCommitCallbacks(execute=True):
+            self.assertEqual(self.client.delete(reverse("admin-attempt-detail", args=[attempt_id])).status_code, 204)
+        self.client.force_authenticate(self.student)
+        self.assertNotEqual(self.start(), attempt_id)
+
+    def test_students_cannot_delete_results(self):
+        attempt_id, _, _ = self.finished_attempt()
+        response = self.client.delete(reverse("admin-attempt-detail", args=[attempt_id]))
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(self.client.delete(reverse("attempt-detail", args=[attempt_id])).status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+        self.assertTrue(Attempt.objects.filter(pk=attempt_id).exists())
+
+    def test_deleting_a_person_removes_their_results_and_recordings(self):
+        attempt_id, names, storage = self.finished_attempt()
+        self.client.force_authenticate(self.admin)
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.delete(reverse("admin-user-detail", args=[self.student.pk]))
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(User.objects.filter(pk=self.student.pk).exists())
+        self.assertFalse(Attempt.objects.filter(pk=attempt_id).exists())
+        self.assertFalse(any(storage.exists(name) for name in names))
+        self.assertEqual(self.client.get(reverse("admin-dashboard")).status_code, status.HTTP_200_OK)
+
+    def test_deleting_a_test_with_results_removes_the_recordings(self):
+        attempt_id, names, storage = self.finished_attempt()
+        self.client.force_authenticate(self.admin)
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.delete(reverse("admin-tests-detail", args=[self.test.pk]) + "?with_results=1")
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Attempt.objects.filter(pk=attempt_id).exists())
+        self.assertFalse(any(storage.exists(name) for name in names))
+
+    def test_failed_delete_keeps_the_recordings(self):
+        attempt_id, names, storage = self.finished_attempt()
+        self.client.force_authenticate(self.admin)
+        with mock.patch.object(Attempt.objects.none().__class__, "delete", side_effect=RuntimeError("database went away")):
+            with self.captureOnCommitCallbacks(execute=True), self.assertRaises(RuntimeError):
+                self.client.delete(reverse("admin-attempt-detail", args=[attempt_id]))
+        self.assertTrue(Attempt.objects.filter(pk=attempt_id).exists())
+        self.assertTrue(all(storage.exists(name) for name in names))

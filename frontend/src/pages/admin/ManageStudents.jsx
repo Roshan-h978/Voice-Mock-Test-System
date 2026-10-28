@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Copy, Pencil, Search, UserPlus, Users } from 'lucide-react';
+import { Copy, Mail, Pencil, Search, Trash2, UserPlus, Users } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import Alert from '../../components/Alert';
 import Button from '../../components/Button';
@@ -10,7 +10,7 @@ import PageHeader from '../../components/PageHeader';
 import StatusBadge from '../../components/StatusBadge';
 import TextField from '../../components/TextField';
 import { useAuth } from '../../context/AuthContext';
-import { getUsers, inviteUser, updateUser } from '../../services/adminService';
+import { createUser, deleteUser, getUsers, inviteUser, updateUser } from '../../services/adminService';
 import { getErrorMessage, getFieldErrors } from '../../services/api';
 import { LEVELS, PAGE_SIZE } from '../../utils/constants';
 import { formatDate, formatScore, initials, levelLabel } from '../../utils/formatters';
@@ -20,6 +20,16 @@ const ROLE_TABS = [
   { value: 'admin', label: 'Admins' },
 ];
 const EMPTY_INVITE = { email: '', full_name: '', role: 'student' };
+const EMPTY_PERSON = { full_name: '', email: '', role: 'student', level: 'beginner', phone: '', password: '' };
+const PASSWORD_WORDS = ['Maple', 'River', 'Cloud', 'Tiger', 'Lotus', 'Amber', 'Cedar', 'Coral', 'Delta', 'Ember', 'Falcon', 'Harbor', 'Jasmine', 'Meadow', 'Orbit', 'Pepper', 'Summit', 'Willow'];
+
+/** An easy-to-read starting password such as "Cedar-Orbit-4821". */
+function suggestPassword() {
+  const numbers = new Uint32Array(3);
+  window.crypto.getRandomValues(numbers);
+  const word = (n) => PASSWORD_WORDS[n % PASSWORD_WORDS.length];
+  return `${word(numbers[0])}-${word(numbers[1])}-${1000 + (numbers[2] % 9000)}`;
+}
 
 export default function ManageStudents() {
   const { user: currentUser, refreshUser } = useAuth();
@@ -41,10 +51,17 @@ export default function ManageStudents() {
   const [inviteResult, setInviteResult] = useState(null);
   const [inviting, setInviting] = useState(false);
 
+  const [addOpen, setAddOpen] = useState(false);
+  const [addForm, setAddForm] = useState(EMPTY_PERSON);
+  const [addErrors, setAddErrors] = useState({});
+  const [added, setAdded] = useState(null);
+  const [adding, setAdding] = useState(false);
+
   const [editing, setEditing] = useState(null);
   const [editErrors, setEditErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [confirmUser, setConfirmUser] = useState(null);
+  const [deleting, setDeleting] = useState(null);
 
   // Wait until typing pauses before searching.
   useEffect(() => {
@@ -117,16 +134,61 @@ export default function ManageStudents() {
     }
   };
 
-  // ---- Edit and suspend -----------------------------------------------------
+  // ---- Add a person directly --------------------------------------------------
+  const openAdd = () => {
+    setAddForm({ ...EMPTY_PERSON, role });
+    setAddErrors({});
+    setAdded(null);
+    setAddOpen(true);
+  };
+
+  const updateAdd = (field) => (event) => {
+    setAddForm((form) => ({ ...form, [field]: event.target.value }));
+    setAddErrors((errors) => ({ ...errors, [field]: '' }));
+  };
+
+  const savePerson = async (event) => {
+    event.preventDefault();
+    const found = {};
+    if (addForm.full_name.trim().length < 2) found.full_name = 'Enter a full name.';
+    if (!/^\S+@\S+\.\S+$/.test(addForm.email.trim())) found.email = 'Enter a valid email address.';
+    if (addForm.password.length < 8) found.password = 'Use at least 8 characters, or press "Suggest one".';
+    setAddErrors(found);
+    if (Object.keys(found).length) return;
+
+    setAdding(true);
+    try {
+      const person = await createUser({ ...addForm, email: addForm.email.trim(), full_name: addForm.full_name.trim(), phone: addForm.phone.trim() });
+      setAdded({ ...person, password: addForm.password });
+      load();
+    } catch (err) {
+      const fieldErrors = getFieldErrors(err);
+      setAddErrors(Object.keys(fieldErrors).length ? fieldErrors : { form: getErrorMessage(err) });
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const signInDetails = added
+    ? `Sign in at ${window.location.origin}/login\nEmail: ${added.email}\nPassword: ${added.password}`
+    : '';
+
+  // ---- Edit, suspend and delete ---------------------------------------------
   const saveEdit = async (event) => {
     event.preventDefault();
     setSaving(true);
     setEditErrors({});
+    const changes = { full_name: editing.full_name, level: editing.level, role: editing.role, phone: editing.phone || '' };
+    if (editing.password) changes.password = editing.password;
     try {
-      await updateUser(editing.id, { full_name: editing.full_name, level: editing.level, role: editing.role });
+      await updateUser(editing.id, changes);
       if (editing.id === currentUser?.id) refreshUser().catch(() => {}); // the name in the sidebar and top bar
       setEditing(null);
-      setNotice('Changes saved.');
+      setNotice(
+        editing.password
+          ? `Changes saved. ${editing.full_name} was signed out and can now sign in with the new password. Share it with them.`
+          : 'Changes saved.',
+      );
       load();
     } catch (err) {
       const fieldErrors = getFieldErrors(err);
@@ -152,6 +214,22 @@ export default function ManageStudents() {
     }
   };
 
+  const removePerson = async () => {
+    const target = deleting;
+    setSaving(true);
+    try {
+      await deleteUser(target.id);
+      setNotice(`${target.full_name}'s account was deleted.`);
+      setDeleting(null);
+      load();
+    } catch (err) {
+      setError(getErrorMessage(err));
+      setDeleting(null);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const totalPages = data ? Math.max(1, Math.ceil(data.count / PAGE_SIZE)) : 1;
 
   return (
@@ -159,11 +237,16 @@ export default function ManageStudents() {
       <PageHeader
         overline="People"
         title="Students and admins"
-        subtitle="Invite people, update their level and suspend accounts."
+        subtitle="Add or invite people, update their details, and suspend or delete accounts."
         actions={
-          <Button icon={UserPlus} onClick={openInvite}>
-            Invite
-          </Button>
+          <>
+            <Button variant="secondary" icon={Mail} onClick={openInvite}>
+              Invite
+            </Button>
+            <Button icon={UserPlus} onClick={openAdd}>
+              Add person
+            </Button>
+          </>
         }
       />
 
@@ -229,8 +312,8 @@ export default function ManageStudents() {
 
       {data && data.results.length === 0 && (
         <div className="vmt-card">
-          <EmptyState icon={Users} title="No one found" action={<Button onClick={openInvite} icon={UserPlus}>Invite someone</Button>}>
-            {search || status || (role === 'student' && level) ? 'Try a different search or filter.' : 'Invite your first student to get started.'}
+          <EmptyState icon={Users} title="No one found" action={<Button onClick={openAdd} icon={UserPlus}>Add someone</Button>}>
+            {search || status || (role === 'student' && level) ? 'Try a different search or filter.' : 'Add or invite your first student to get started.'}
           </EmptyState>
         </div>
       )}
@@ -280,13 +363,24 @@ export default function ManageStudents() {
                       </td>
                       <td className="is-actions">
                         <div className="vmt-row vmt-row-tight" style={{ justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
-                          <Button size="sm" variant="ghost" icon={Pencil} onClick={() => { setEditErrors({}); setEditing({ ...person }); }}>
+                          <Button size="sm" variant="ghost" icon={Pencil} onClick={() => { setEditErrors({}); setEditing({ ...person, password: '' }); }}>
                             Edit
                           </Button>
                           {!isSelf && (
                             <Button size="sm" variant={person.is_active ? 'secondary' : 'primary'} onClick={() => setConfirmUser(person)}>
                               {person.is_active ? 'Suspend' : 'Activate'}
                             </Button>
+                          )}
+                          {!isSelf && (
+                            <button
+                              type="button"
+                              className="vmt-icon-btn vmt-icon-btn-sm"
+                              onClick={() => setDeleting(person)}
+                              aria-label={`Delete ${person.full_name}`}
+                              title="Delete"
+                            >
+                              <Trash2 className="vmt-icon" aria-hidden="true" />
+                            </button>
                           )}
                         </div>
                       </td>
@@ -419,6 +513,31 @@ export default function ManageStudents() {
               <option value="student">Student</option>
               <option value="admin">Admin</option>
             </TextField>
+            <TextField
+              label="Phone (optional)"
+              type="tel"
+              value={editing.phone || ''}
+              onChange={(event) => setEditing((item) => ({ ...item, phone: event.target.value }))}
+              error={editErrors.phone}
+            />
+            {editing.id !== currentUser?.id && (
+              <div className="vmt-stack vmt-stack-sm">
+                <TextField
+                  label="New password (optional)"
+                  type="password"
+                  autoComplete="new-password"
+                  value={editing.password}
+                  onChange={(event) => setEditing((item) => ({ ...item, password: event.target.value }))}
+                  error={editErrors.password}
+                  help="Leave empty to keep their password. A new one signs them out, and they're asked to choose their own."
+                />
+                <div>
+                  <Button size="sm" variant="ghost" onClick={() => setEditing((item) => ({ ...item, password: suggestPassword() }))}>
+                    Suggest one
+                  </Button>
+                </div>
+              </div>
+            )}
             <div className="vmt-modal-actions">
               <Button variant="secondary" onClick={() => setEditing(null)}>
                 Cancel
@@ -430,6 +549,103 @@ export default function ManageStudents() {
           </form>
         )}
       </Modal>
+
+      {/* Add a person directly */}
+      <Modal
+        open={addOpen}
+        title={added ? 'Account created' : 'Add a person'}
+        description={added ? undefined : 'Create the account now and give them a starting password. No email is needed.'}
+        onClose={() => setAddOpen(false)}
+      >
+        {added ? (
+          <div className="vmt-stack">
+            <Alert tone="success" title={`${added.full_name} can sign in now`}>
+              Share these sign-in details with them. They&apos;ll be asked to choose their own password.
+            </Alert>
+            <div className="vmt-transcript" style={{ whiteSpace: 'pre-line', wordBreak: 'break-all' }} aria-label="Sign-in details">
+              {signInDetails}
+            </div>
+            <div>
+              <Button size="sm" variant="secondary" icon={Copy} onClick={() => navigator.clipboard?.writeText(signInDetails)}>
+                Copy sign-in details
+              </Button>
+            </div>
+            <div className="vmt-modal-actions">
+              <Button variant="secondary" onClick={() => { setAdded(null); setAddForm({ ...EMPTY_PERSON, role }); }}>
+                Add another
+              </Button>
+              <Button onClick={() => setAddOpen(false)}>Done</Button>
+            </div>
+          </div>
+        ) : (
+          <form className="vmt-form" onSubmit={savePerson} noValidate>
+            {addErrors.form && <Alert tone="danger">{addErrors.form}</Alert>}
+            <TextField label="Full name" value={addForm.full_name} onChange={updateAdd('full_name')} error={addErrors.full_name} required />
+            <TextField label="Email" type="email" value={addForm.email} onChange={updateAdd('email')} error={addErrors.email} required />
+            <div className="vmt-grid-2">
+              <TextField as="select" label="Role" value={addForm.role} onChange={updateAdd('role')} error={addErrors.role}>
+                <option value="student">Student</option>
+                <option value="admin">Admin</option>
+              </TextField>
+              <TextField as="select" label="English level" value={addForm.level} onChange={updateAdd('level')} error={addErrors.level}>
+                {LEVELS.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </TextField>
+            </div>
+            <TextField label="Phone (optional)" type="tel" value={addForm.phone} onChange={updateAdd('phone')} error={addErrors.phone} />
+            <div className="vmt-stack vmt-stack-sm">
+              <TextField
+                label="Starting password"
+                type="password"
+                autoComplete="new-password"
+                value={addForm.password}
+                onChange={updateAdd('password')}
+                error={addErrors.password}
+                help="At least 8 characters. They're asked to change it after signing in."
+                required
+              />
+              <div>
+                <Button size="sm" variant="ghost" onClick={() => { setAddForm((form) => ({ ...form, password: suggestPassword() })); setAddErrors((errors) => ({ ...errors, password: '' })); }}>
+                  Suggest one
+                </Button>
+              </div>
+            </div>
+            <div className="vmt-modal-actions">
+              <Button variant="secondary" onClick={() => setAddOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" loading={adding} icon={UserPlus}>
+                Create account
+              </Button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      {/* Delete */}
+      <Modal
+        open={Boolean(deleting)}
+        title={`Delete ${deleting?.full_name}?`}
+        description={
+          deleting?.role === 'student'
+            ? `Their account and all their test results and recordings${deleting?.attempt_count ? ` (${deleting.attempt_count} ${deleting.attempt_count === 1 ? 'test' : 'tests'})` : ''} are removed for good. To keep their results, suspend the account instead.`
+            : 'Their account is removed for good. Tests and reviews they made are kept.'
+        }
+        onClose={() => setDeleting(null)}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setDeleting(null)}>
+              Cancel
+            </Button>
+            <Button variant="danger" icon={Trash2} loading={saving} onClick={removePerson}>
+              Delete account
+            </Button>
+          </>
+        }
+      />
 
       {/* Suspend / activate */}
       <Modal

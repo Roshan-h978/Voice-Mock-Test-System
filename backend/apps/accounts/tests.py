@@ -306,6 +306,77 @@ class AdminUserManagementTests(AccountTestCase):
         self.client.force_authenticate(self.student)
         self.assertEqual(self.client.get(reverse("admin-users")).status_code, status.HTTP_403_FORBIDDEN)
 
+    def test_admin_adds_a_person_with_a_starting_password(self):
+        body = {"email": " Ram@Example.com ", "full_name": "Ram  Karki", "role": "student", "level": "advanced", "password": "Ram-Speaks-2026"}
+        response = self.client.post(reverse("admin-users"), body, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(response.data["email"], "ram@example.com")
+        self.assertEqual(response.data["full_name"], "Ram Karki")
+        self.assertNotIn("password", response.data)
+        ram = User.objects.get(email="ram@example.com")
+        self.assertTrue(ram.check_password("Ram-Speaks-2026"))
+        self.assertTrue(ram.uses_default_password)  # asked to choose their own password
+        self.assertEqual((ram.level, ram.role, ram.is_staff), ("advanced", "student", False))
+        self.client.force_authenticate(None)
+        login = self.client.post(reverse("auth-login"), {"email": "ram@example.com", "password": "Ram-Speaks-2026"}, format="json")
+        self.assertEqual(login.status_code, status.HTTP_200_OK)
+        self.assertTrue(login.data["user"]["uses_default_password"])
+
+    def test_adding_a_person_checks_email_and_password(self):
+        taken = self.client.post(reverse("admin-users"), {"email": "AARATI@example.com", "full_name": "Aarati", "password": "Ram-Speaks-2026"}, format="json")
+        self.assertEqual(taken.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(taken.data["email"], ["This person already has an account."])
+        weak = self.client.post(reverse("admin-users"), {"email": "ram@example.com", "full_name": "Ram Karki", "password": "123"}, format="json")
+        self.assertEqual(weak.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("password", weak.data)
+        self.assertFalse(User.objects.filter(email="ram@example.com").exists())
+
+    def test_admin_sets_a_new_password_and_signs_them_out(self):
+        self.client.force_authenticate(None)
+        tokens = self.client.post(reverse("auth-login"), {"email": "aarati@example.com", "password": PASSWORD}, format="json").data
+        self.client.force_authenticate(self.admin)
+        url = reverse("admin-user-detail", args=[self.student.pk])
+        response = self.client.patch(url, {"full_name": "Aarati Sharma", "password": "Fresh-Start-2026"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.student.refresh_from_db()
+        self.assertTrue(self.student.check_password("Fresh-Start-2026"))
+        self.assertTrue(self.student.uses_default_password)
+        self.client.force_authenticate(None)
+        refresh = self.client.post(reverse("auth-refresh"), {"refresh": tokens["refresh"]}, format="json")
+        self.assertEqual(refresh.status_code, status.HTTP_401_UNAUTHORIZED)  # old sessions end
+
+    def test_empty_password_keeps_the_current_one(self):
+        url = reverse("admin-user-detail", args=[self.student.pk])
+        response = self.client.patch(url, {"level": "advanced", "password": ""}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.student.refresh_from_db()
+        self.assertTrue(self.student.check_password(PASSWORD))
+        self.assertFalse(self.student.uses_default_password)
+
+    def test_new_password_must_be_strong_and_not_your_own(self):
+        weak = self.client.patch(reverse("admin-user-detail", args=[self.student.pk]), {"password": "123"}, format="json")
+        self.assertEqual(weak.status_code, status.HTTP_400_BAD_REQUEST)
+        own = self.client.patch(reverse("admin-user-detail", args=[self.admin.pk]), {"password": "Fresh-Start-2026"}, format="json")
+        self.assertEqual(own.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("Profile", str(own.data["password"]))
+
+    def test_admin_deletes_a_person(self):
+        response = self.client.delete(reverse("admin-user-detail", args=[self.student.pk]))
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(User.objects.filter(pk=self.student.pk).exists())
+
+    def test_admin_cannot_delete_themselves(self):
+        response = self.client.delete(reverse("admin-user-detail", args=[self.admin.pk]))
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("your own account", response.data["detail"])
+        self.assertTrue(User.objects.filter(pk=self.admin.pk).exists())
+
+    def test_students_cannot_add_or_delete_people(self):
+        self.client.force_authenticate(self.student)
+        body = {"email": "ram@example.com", "full_name": "Ram Karki", "password": "Ram-Speaks-2026"}
+        self.assertEqual(self.client.post(reverse("admin-users"), body, format="json").status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(self.client.delete(reverse("admin-user-detail", args=[self.admin.pk])).status_code, status.HTTP_403_FORBIDDEN)
+
     def test_sorting_by_score_puts_people_without_a_score_last(self):
         from apps.attempts.models import Attempt
         from apps.tests_manager.models import MockTest

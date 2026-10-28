@@ -125,8 +125,8 @@ export default function ManageTests() {
     const test = confirmDelete;
     setSaving(true);
     try {
-      await deleteTest(test.id);
-      setNotice(`"${test.title}" was deleted.`);
+      await deleteTest(test.id, { withResults: true }); // the dialog already said the results go too
+      setNotice(test.attempt_count ? `"${test.title}" and its results were deleted.` : `"${test.title}" was deleted.`);
       setConfirmDelete(null);
       load();
     } catch (err) {
@@ -265,17 +265,15 @@ export default function ManageTests() {
                           Restore
                         </Button>
                       )}
-                      {test.attempt_count === 0 && (
-                        <button
-                          type="button"
-                          className="vmt-icon-btn vmt-icon-btn-sm"
-                          onClick={() => setConfirmDelete(test)}
-                          aria-label={`Delete ${test.title}`}
-                          title="Delete"
-                        >
-                          <Trash2 className="vmt-icon" aria-hidden="true" />
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        className="vmt-icon-btn vmt-icon-btn-sm"
+                        onClick={() => setConfirmDelete(test)}
+                        aria-label={`Delete ${test.title}`}
+                        title="Delete"
+                      >
+                        <Trash2 className="vmt-icon" aria-hidden="true" />
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -353,7 +351,11 @@ export default function ManageTests() {
       <Modal
         open={Boolean(confirmDelete)}
         title={`Delete "${confirmDelete?.title}"?`}
-        description="The test and its questions are removed for good."
+        description={
+          confirmDelete?.attempt_count
+            ? `Students have taken this test. The test, its questions and ${confirmDelete.attempt_count} ${confirmDelete.attempt_count === 1 ? 'result' : 'results'} with their recordings are removed for good. To keep the results, archive the test instead.`
+            : 'The test and its questions are removed for good.'
+        }
         onClose={() => setConfirmDelete(null)}
         footer={
           <>
@@ -361,7 +363,7 @@ export default function ManageTests() {
               Cancel
             </Button>
             <Button variant="danger" loading={saving} onClick={removeTest}>
-              Delete test
+              {confirmDelete?.attempt_count ? 'Delete test and results' : 'Delete test'}
             </Button>
           </>
         }

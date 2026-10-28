@@ -7,6 +7,7 @@ import logging
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from django.db.models import Avg, Count, Max, Min, Q
 from django.db.models.functions import TruncDate
 from django.utils import timezone
@@ -213,6 +214,22 @@ def _delete_file(storage, name: str) -> None:
         storage.delete(name)
     except Exception:  # noqa: BLE001 - a leftover file must never break the request
         logger.warning("Could not delete old recording %s", name)
+
+
+# ---------------------------------------------------------------------------
+# Deleting results
+# ---------------------------------------------------------------------------
+def delete_attempts(attempts) -> int:
+    """Delete attempts (a queryset) with their answers and recording files. Returns how many attempts were removed.
+
+    The files are removed only after the database change is saved, so a failed delete never loses a recording.
+    """
+    with transaction.atomic():
+        names = [name for name in Answer.objects.filter(attempt__in=attempts).values_list("audio", flat=True) if name]
+        _, removed = Attempt.objects.filter(pk__in=attempts.values("pk")).delete()
+        storage = Answer._meta.get_field("audio").storage
+        transaction.on_commit(lambda: [_delete_file(storage, name) for name in names])
+    return removed.get(Attempt._meta.label, 0)
 
 
 # ---------------------------------------------------------------------------

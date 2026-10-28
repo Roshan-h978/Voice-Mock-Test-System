@@ -18,14 +18,16 @@ from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, Ou
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
-from apps.attempts.models import FINISHED_STATUSES
-from apps.common.utils import StandardPagination, frontend_url
+from apps.attempts.models import FINISHED_STATUSES, Attempt
+from apps.attempts.services import delete_attempts
+from apps.common.utils import ServiceError, StandardPagination, frontend_url
 from apps.notifications import email_service
 
 from . import google_auth
 from .models import AccountToken
 from .permissions import IsAdmin
 from .serializers import (
+    AdminUserCreateSerializer,
     AdminUserSerializer,
     ChangePasswordSerializer,
     GoogleLoginSerializer,
@@ -284,8 +286,11 @@ def users_with_stats():
     )
 
 
-class AdminUserListView(generics.ListAPIView):
-    """Students and admins with filters: ?role= ?status=active|suspended ?level= ?search= ?ordering="""
+class AdminUserListView(generics.ListCreateAPIView):
+    """Students and admins with filters: ?role= ?status=active|suspended ?level= ?search= ?ordering=
+
+    POST adds a person directly: {email, full_name, role, level, phone?, password}.
+    """
 
     permission_classes = [IsAdmin]
     serializer_class = AdminUserSerializer
@@ -324,13 +329,37 @@ class AdminUserListView(generics.ListAPIView):
 
         return queryset.order_by(self.ORDERING.get(params.get("ordering"), "full_name"), "id")
 
+    def create(self, request, *args, **kwargs):
+        serializer = AdminUserCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        data = AdminUserSerializer(users_with_stats().get(pk=user.pk), context=self.get_serializer_context()).data
+        return Response(data, status=status.HTTP_201_CREATED)
 
-class AdminUserDetailView(generics.RetrieveUpdateAPIView):
-    """View or update a user: full_name, level, phone, role, is_active (suspend)."""
+
+class AdminUserDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """View, update or delete a user.
+
+    PATCH: full_name, level, phone, role, is_active (suspend), password (sets a new one and signs them out).
+    DELETE: removes the account with all its results and recordings.
+    """
 
     permission_classes = [IsAdmin]
     serializer_class = AdminUserSerializer
-    http_method_names = ["get", "patch", "head", "options"]
+    http_method_names = ["get", "patch", "delete", "head", "options"]
 
     def get_queryset(self):
         return users_with_stats()
+
+    def perform_update(self, serializer):
+        new_password = "password" in serializer.validated_data
+        user = serializer.save()
+        if new_password:
+            sign_out_everywhere(user)
+
+    def perform_destroy(self, instance):
+        if instance.pk == self.request.user.pk:
+            raise ServiceError("You can't delete your own account.")
+        with transaction.atomic():
+            delete_attempts(Attempt.objects.filter(student=instance))
+            instance.delete()
