@@ -264,7 +264,8 @@ GROQ_SCORING_MODEL = env("GROQ_SCORING_MODEL", default="openai/gpt-oss-120b")
 # Optional free backup for the written feedback (Google AI Studio key, no card needed).
 GEMINI_API_KEY = env("GEMINI_API_KEY", default="").strip()
 GEMINI_BASE_URL = env("GEMINI_BASE_URL", default="https://generativelanguage.googleapis.com/v1beta/openai").rstrip("/")
-GEMINI_MODEL = env("GEMINI_MODEL", default="gemini-2.5-flash")
+# Google retired the 2.5 models for new projects; 3.5 Flash-Lite is the stable, fast free choice (or gemini-3.8-flash).
+GEMINI_MODEL = env("GEMINI_MODEL", default="gemini-3.5-flash-lite")
 OPENAI_API_KEY = env("OPENAI_API_KEY", default="")
 OPENAI_BASE_URL = env("OPENAI_BASE_URL", default="https://api.openai.com/v1").rstrip("/")
 TRANSCRIBE_MODEL = env("TRANSCRIBE_MODEL", default="whisper-1")

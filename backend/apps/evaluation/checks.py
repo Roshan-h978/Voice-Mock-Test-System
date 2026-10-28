@@ -5,6 +5,7 @@ reported as plain sentences. Works in demo mode too, so keys can be checked befo
 
 import io
 import math
+import re
 import struct
 import wave
 
@@ -107,13 +108,59 @@ def _from_response(result, service, response) -> dict:
     elif code in (401, 403):
         _fail(result, f"{service.name} rejected the key. Check {service.key_setting}.")
     elif code == 404:
-        _fail(result, f"{service.name} doesn't know the model “{service.model}”. Check the model name.")
+        detail = f"{service.name} doesn't know the model “{service.model}”, or your key can't use it."
+        suggestions = _model_suggestions(service)
+        if suggestions:
+            detail += f" Models your key can use include: {', '.join(suggestions)}. Put one in {_model_setting(service)}."
+        else:
+            detail += f" Check {_model_setting(service)}."
+        _fail(result, detail)
     elif code == 429:
         result.update(status="warning", detail="The key works, but the free limit is used up for now. Try again in a minute.")
     else:
         message = _error_text(response)
         _fail(result, f"{service.name} answered with error {code}." + (f" {message}" if message else ""))
     return result
+
+
+MODEL_SETTINGS = {
+    ("Groq", "Speech-to-text"): "GROQ_TRANSCRIBE_MODEL",
+    "Groq": "GROQ_SCORING_MODEL",
+    "Gemini": "GEMINI_MODEL",
+    "OpenAI": "TRANSCRIBE_MODEL",
+    "Anthropic": "SCORING_MODEL",
+}
+SKIP_WORDS = ("tts", "live", "image", "audio", "embed", "preview", "exp", "guard", "vision")
+
+
+def _model_setting(service) -> str:
+    if service.name == "Groq" and service.model.startswith("whisper"):
+        return "GROQ_TRANSCRIBE_MODEL"
+    return MODEL_SETTINGS.get(service.name, "the model setting")
+
+
+def _model_suggestions(service, limit: int = 4) -> list[str]:
+    """Names from the service's own model list that look like a fit, newest first (best effort)."""
+    if service.kind == providers.ANTHROPIC:
+        return []
+    try:
+        response = requests.get(
+            f"{service.base_url}/models", headers={"Authorization": f"Bearer {service.api_key}"}, timeout=settings.AI_REQUEST_TIMEOUT
+        )
+        items = _json(response).get("data") or [] if response.ok else []
+    except requests.RequestException:
+        return []
+    wanted = "whisper" if service.model.startswith("whisper") else ("flash" if service.name == "Gemini" else "")
+    names = []
+    for item in items:
+        name = str(item.get("id") or "").removeprefix("models/") if isinstance(item, dict) else ""
+        if name and (not wanted or wanted in name) and not any(word in name for word in SKIP_WORDS):
+            names.append(name)
+    return sorted(set(names), key=_version_key, reverse=True)[:limit]
+
+
+def _version_key(name: str):
+    return [int(part) if part.isdigit() else part for part in re.split(r"(\d+)", name)]
 
 
 def _tone_wav(seconds: float = 1.0, rate: int = 16000) -> bytes:

@@ -234,7 +234,7 @@ class GroqConfigViewTests(APITestCase):
 # ---------------------------------------------------------------------------
 # Free Gemini backup and the "Test AI connection" button
 # ---------------------------------------------------------------------------
-GEMINI = {"GEMINI_API_KEY": "gem-test", "GEMINI_MODEL": "gemini-2.5-flash"}
+GEMINI = {"GEMINI_API_KEY": "gem-test", "GEMINI_MODEL": "gemini-3.5-flash-lite"}
 
 
 @override_settings(**GROQ, **GEMINI)
@@ -250,7 +250,7 @@ class GeminiBackupTests(SimpleTestCase):
         last = post.call_args_list[-1]
         self.assertEqual(last.args[0], "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions")
         self.assertEqual(last.kwargs["headers"]["Authorization"], "Bearer gem-test")
-        self.assertEqual(last.kwargs["json"]["model"], "gemini-2.5-flash")
+        self.assertEqual(last.kwargs["json"]["model"], "gemini-3.5-flash-lite")
 
     @override_settings(GROQ_API_KEY="")
     def test_gemini_answers_when_the_groq_key_is_missing(self):
@@ -321,3 +321,24 @@ class ConnectionCheckTests(APITestCase):
         student = User.objects.create_user("aarati@example.com", "Speak-Clearly-2026", full_name="Aarati")
         self.client.force_authenticate(student)
         self.assertEqual(self.client.post(reverse("evaluation-check")).status_code, 403)
+
+
+@override_settings(**{**GROQ, **GEMINI, "GEMINI_MODEL": "gemini-2.5-flash"})
+class ModelSuggestionTests(APITestCase):
+    def test_unknown_gemini_model_suggests_ones_the_key_can_use(self):
+        admin = User.objects.create_user("nisha@example.com", "Speak-Clearly-2026", full_name="Nisha", role="admin")
+        self.client.force_authenticate(admin)
+        ok_chat = fake_response(payload=chat_payload('{"ok": true}'))
+        listing = fake_response(payload={"data": [
+            {"id": "models/gemini-3.5-flash-lite"}, {"id": "models/gemini-3.8-flash"}, {"id": "models/gemini-3.1-flash-live-preview"},
+            {"id": "models/gemini-embedding-001"}, {"id": "models/gemini-3.6-flash"},
+        ]})
+        with mock.patch("apps.evaluation.checks.requests.post", side_effect=[fake_response(payload={"text": ""}), ok_chat, fake_response(404), fake_response(404)]), \
+                mock.patch("apps.evaluation.checks.requests.get", return_value=listing) as get:
+            rows = self.client.post(reverse("evaluation-check")).data["results"]
+        backup = rows[2]
+        self.assertEqual(backup["status"], "error")
+        self.assertIn("gemini-3.8-flash, gemini-3.6-flash, gemini-3.5-flash-lite", backup["detail"])
+        self.assertIn("GEMINI_MODEL", backup["detail"])
+        self.assertNotIn("live-preview", backup["detail"])
+        self.assertTrue(get.call_args.args[0].endswith("/v1beta/openai/models"))
