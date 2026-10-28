@@ -89,6 +89,8 @@ def _json(response) -> dict:
         data = response.json()
     except ValueError:
         return {}
+    if isinstance(data, list) and data and isinstance(data[0], dict):  # Google sometimes wraps the error in a list
+        data = data[0]
     return data if isinstance(data, dict) else {}
 
 
@@ -106,7 +108,8 @@ def _from_response(result, service, response) -> dict:
     if 200 <= code < 300:
         result.update(status="ok", detail="Connected and working.")
     elif code in (401, 403):
-        _fail(result, f"{service.name} rejected the key. Check {service.key_setting}.")
+        message = _error_text(response)  # the service's own reason, e.g. a disabled API or an unsupported country
+        _fail(result, f"{service.name} refused the request (error {code}). Check {service.key_setting}." + (f" {service.name} says: {message}" if message else ""))
     elif code == 404:
         detail = f"{service.name} doesn't know the model “{service.model}”, or your key can't use it."
         suggestions = _model_suggestions(service)

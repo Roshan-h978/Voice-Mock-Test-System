@@ -295,6 +295,7 @@ class ConnectionCheckTests(APITestCase):
         data, _ = self.check([fake_response(401, payload={"error": {"message": "Invalid API Key"}}), fake_response(429)])
         self.assertEqual(data[0]["status"], "error")
         self.assertIn("GROQ_API_KEY", data[0]["detail"])
+        self.assertIn("Invalid API Key", data[0]["detail"])
         self.assertEqual(data[1]["status"], "warning")
         self.assertIn("free limit", data[1]["detail"])
         self.assertEqual(len(data), 2)  # no backup configured
@@ -342,3 +343,16 @@ class ModelSuggestionTests(APITestCase):
         self.assertIn("GEMINI_MODEL", backup["detail"])
         self.assertNotIn("live-preview", backup["detail"])
         self.assertTrue(get.call_args.args[0].endswith("/v1beta/openai/models"))
+
+
+@override_settings(**{**GROQ, **GEMINI})
+class GoogleErrorTests(APITestCase):
+    def test_googles_own_reason_is_shown(self):
+        admin = User.objects.create_user("nisha@example.com", "Speak-Clearly-2026", full_name="Nisha", role="admin")
+        self.client.force_authenticate(admin)
+        ok_chat = fake_response(payload=chat_payload('{"ok": true}'))
+        google_error = fake_response(403, payload=[{"error": {"code": 403, "message": "Generative Language API has not been used in project 123 before or it is disabled.", "status": "PERMISSION_DENIED"}}])
+        with mock.patch("apps.evaluation.checks.requests.post", side_effect=[fake_response(payload={"text": ""}), ok_chat, google_error]):
+            rows = self.client.post(reverse("evaluation-check")).data["results"]
+        self.assertIn("error 403", rows[2]["detail"])
+        self.assertIn("Generative Language API has not been used", rows[2]["detail"])
