@@ -40,7 +40,7 @@ export default function Button({
         Icon && <Icon className="vmt-icon" aria-hidden="true" />
       )}
       {children !== undefined && children !== null && <span>{children}</span>}
-      {IconRight && !loading && <IconRight className="vmt-icon" aria-hidden="true" />}
+      {IconRight && !loading && <IconRight className="vmt-icon vmt-btn-icon-right" aria-hidden="true" />}
     </>
   );
 

@@ -23,11 +23,13 @@
   --danger: #b42318;
   --danger-tint: #fdecea;
   --on-teal: var(--navy);
+  --marigold: #f4b740; /* decorative shapes only (never text) */
 
   /* Shadows */
   --shadow-card: 0 1px 2px rgba(20, 43, 74, 0.06), 0 4px 16px rgba(20, 43, 74, 0.06);
   --shadow-overlay: 0 16px 48px rgba(20, 43, 74, 0.24);
   --shadow-focus: 0 0 0 2px #ffffff, 0 0 0 4px #0b6e6a;
+  --shadow-lift: 0 2px 4px rgba(20, 43, 74, 0.06), 0 12px 28px rgba(20, 43, 74, 0.12);
 
   /* Spacing (8px grid) */
   --space-05: 4px;
@@ -42,6 +44,7 @@
   /* Radii */
   --radius-control: 8px;
   --radius-card: 12px;
+  --radius-feature: 24px; /* large panels on the landing page */
   --radius-pill: 999px;
 
   /* Sizes */

@@ -28,6 +28,12 @@ npm run build
 
 Upload the `dist` folder to any static host (Netlify, Vercel, Cloudflare Pages…). Before building, set `VITE_API_URL=https://your-backend-address/api` in `.env`, and add a rule that sends every path to `/index.html`.
 
+## Your own photo on the home page
+
+Save a photo as `src/assets/hero.jpg` (or `hero.png` / `hero.webp`) and it appears in the arch frame at the top of the home page. No code change is needed. Without a photo, the frame shows the built-in recording picture. A portrait photo (taller than wide, about 800 × 1000 px) fits best. To change its description for screen readers, edit `HERO_IMAGE_ALT` in `src/pages/common/Home.jsx`.
+
+The shapes (sound rings, waveform bars, score arc) are in `src/components/Shapes.jsx`, and the animations are at "Landing animations" in `src/styles/global.css`. People who turn on "reduce motion" on their device see the page without movement.
+
 ## Folder guide
 
 | Folder | What's inside |

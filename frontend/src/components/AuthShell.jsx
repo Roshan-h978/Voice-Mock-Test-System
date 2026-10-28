@@ -1,6 +1,7 @@
 import { Check } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import Brand from './Brand';
+import { SoundRings } from './Shapes';
 
 const POINTS = [
   'Speaking tests with real exam-style questions',
@@ -13,6 +14,11 @@ export default function AuthShell({ title, subtitle, children }) {
   return (
     <div className="vmt-auth">
       <aside className="vmt-auth-hero">
+        <div className="vmt-auth-geo" aria-hidden="true">
+          <span className="vmt-dots vmt-auth-dots" />
+          <SoundRings className="vmt-auth-rings" rings={5} />
+          <span className="vmt-shape vmt-auth-sun" />
+        </div>
         <Brand />
         <div className="vmt-stack vmt-stack-lg">
           <h2 className="display">Practise speaking English with confidence.</h2>

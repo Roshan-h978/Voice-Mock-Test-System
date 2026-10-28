@@ -32,7 +32,8 @@ function QuestionForm({ initial, onSave, onCancel, saving, errors, submitLabel }
       className="vmt-form"
       onSubmit={(event) => {
         event.preventDefault();
-        onSave(values, () => setValues(EMPTY_QUESTION));
+        // Clear after saving, unless something new was typed while it saved (that is kept).
+        onSave(values, () => setValues((current) => (current === values ? EMPTY_QUESTION : current)));
       }}
       noValidate
     >
