@@ -174,3 +174,82 @@ class SeedDemoCommandTests(TestCase):
         call_command("seed_demo", stdout=StringIO())
         self.assertEqual(MockTest.objects.count(), 3)
         self.assertFalse(User.objects.exists())
+
+
+# ---------------------------------------------------------------------------
+# AI-written questions (demo bank in tests; the real AI is mocked)
+# ---------------------------------------------------------------------------
+@override_settings(EVALUATION_DEMO_MODE=True)
+class GenerateQuestionsTests(APITestCase):
+    def setUp(self):
+        self.admin = make_admin()
+        self.client.force_authenticate(self.admin)
+        self.test = make_test(status=MockTest.Status.DRAFT, questions=0, title="Travel and places")
+
+    def test_suggestions_are_returned_but_not_saved(self):
+        response = self.client.post(reverse("admin-questions-generate"), {"test": self.test.id, "count": 4}, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(len(response.data["questions"]), 4)
+        self.assertTrue(response.data["is_demo"])
+        self.assertTrue(all(item["text"] and "hint" in item for item in response.data["questions"]))
+        from apps.evaluation.question_writer import DEMO_BANK
+
+        travel = {text for topic, _level, text, _hint in DEMO_BANK if topic == "travel"}
+        self.assertTrue({item["text"] for item in response.data["questions"]} <= travel)  # matched to the test's title
+        self.assertEqual(self.test.questions.count(), 0)
+
+    def test_existing_questions_are_not_suggested_again(self):
+        from apps.evaluation.question_writer import DEMO_BANK
+
+        for _topic, _level, text, _hint in DEMO_BANK[:30]:
+            Question.objects.create(test=self.test, text=text)
+        response = self.client.post(reverse("admin-questions-generate"), {"test": self.test.id, "count": 10}, format="json")
+        existing = set(self.test.questions.values_list("text", flat=True))
+        self.assertTrue(response.data["questions"])
+        self.assertFalse(existing & {item["text"] for item in response.data["questions"]})
+
+    def test_bulk_add_appends_in_order(self):
+        Question.objects.create(test=self.test, text="Already here: describe your town.")
+        body = {"test": self.test.id, "questions": [{"text": "  First   new question?  ", "hint": "a hint"}, {"text": "Second new question?", "answer_seconds": 90}]}
+        response = self.client.post(reverse("admin-questions-bulk"), body, format="json")
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual([row["order"] for row in response.data], [1, 2, 3])
+        self.assertEqual(response.data[1]["text"], "First new question?")
+        self.assertEqual(response.data[2]["time_limit"], 90)
+
+    def test_archived_test_and_bad_input_are_refused(self):
+        archived = make_test(status=MockTest.Status.ARCHIVED, title="Old test")
+        self.assertEqual(self.client.post(reverse("admin-questions-generate"), {"test": archived.id}, format="json").status_code, 400)
+        self.assertEqual(
+            self.client.post(reverse("admin-questions-bulk"), {"test": archived.id, "questions": [{"text": "A fine question?"}]}, format="json").status_code,
+            400,
+        )
+        self.assertEqual(self.client.post(reverse("admin-questions-generate"), {"test": self.test.id, "count": 50}, format="json").status_code, 400)
+        self.assertEqual(self.client.post(reverse("admin-questions-bulk"), {"test": self.test.id, "questions": [{"text": "Hi"}]}, format="json").status_code, 400)
+
+    def test_students_cannot_generate(self):
+        self.client.force_authenticate(make_student())
+        self.assertEqual(self.client.post(reverse("admin-questions-generate"), {"test": self.test.id}, format="json").status_code, 403)
+
+    @override_settings(EVALUATION_DEMO_MODE=False, AI_PROVIDER="groq", GROQ_API_KEY="gsk-test")
+    def test_real_ai_reply_is_cleaned(self):
+        from unittest import mock
+
+        reply = {"questions": [
+            {"text": "1. Describe a city you would like to visit.", "hint": "Place, reasons"},
+            {"text": "Describe a city you would like to visit.", "hint": "duplicate"},
+            {"text": "Too short"},
+            "Q3) Talk about the best journey you have ever taken.",
+        ]}
+        with mock.patch("apps.evaluation.feedback.call_model", return_value=reply) as call:
+            response = self.client.post(reverse("admin-questions-generate"), {"test": self.test.id, "count": 3, "topic": "cities"}, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual([q["text"] for q in response.data["questions"]], ["Describe a city you would like to visit.", "Talk about the best journey you have ever taken."])
+        self.assertFalse(response.data["is_demo"])
+        self.assertIn('"topic": "cities"', call.call_args.args[1])
+
+    @override_settings(EVALUATION_DEMO_MODE=False, AI_PROVIDER="groq", GROQ_API_KEY="", GEMINI_API_KEY="")
+    def test_missing_key_gives_a_clear_message(self):
+        response = self.client.post(reverse("admin-questions-generate"), {"test": self.test.id}, format="json")
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("GROQ_API_KEY", response.data["detail"])

@@ -100,3 +100,18 @@ export function headlineFor(score) {
   if (score >= 60) return 'Good progress';
   return 'Keep practising';
 }
+
+/** "just now", "5 min ago", "3 hours ago", "yesterday", "4 days ago", then the date */
+export function timeAgo(value) {
+  const date = toDate(value);
+  if (!date) return '—';
+  const minutes = Math.round((Date.now() - date.getTime()) / 60000);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return hours === 1 ? '1 hour ago' : `${hours} hours ago`;
+  const days = Math.round(hours / 24);
+  if (days === 1) return 'yesterday';
+  if (days < 7) return `${days} days ago`;
+  return formatDate(date);
+}

@@ -125,6 +125,42 @@ class AdminQuestionSerializer(serializers.ModelSerializer):
         return attrs
 
 
+class EditableTestField(serializers.PrimaryKeyRelatedField):
+    """A test whose questions can still change (not archived)."""
+
+    def to_internal_value(self, data):
+        test = super().to_internal_value(data)
+        if test.status == MockTest.Status.ARCHIVED:
+            raise serializers.ValidationError(ARCHIVED_QUESTIONS_MESSAGE)
+        return test
+
+
+class GenerateQuestionsSerializer(serializers.Serializer):
+    test = EditableTestField(queryset=MockTest.objects.all())
+    count = serializers.IntegerField(min_value=1, max_value=10, default=3)
+    topic = serializers.CharField(max_length=150, required=False, allow_blank=True, trim_whitespace=True)
+
+
+class NewQuestionSerializer(serializers.Serializer):
+    text = serializers.CharField(max_length=1000)
+    hint = serializers.CharField(max_length=255, required=False, allow_blank=True, default="")
+    answer_seconds = serializers.IntegerField(min_value=10, max_value=300, required=False, allow_null=True, default=None)
+
+    def validate_text(self, value):
+        value = " ".join(value.split())
+        if len(value) < 5:
+            raise serializers.ValidationError("Write the question in at least 5 characters.")
+        return value
+
+    def validate_hint(self, value):
+        return " ".join(value.split())
+
+
+class BulkQuestionsSerializer(serializers.Serializer):
+    test = EditableTestField(queryset=MockTest.objects.all())
+    questions = NewQuestionSerializer(many=True, allow_empty=False, max_length=20)
+
+
 class AdminTestSerializer(serializers.ModelSerializer):
     question_count = serializers.SerializerMethodField()
     attempt_count = serializers.SerializerMethodField()

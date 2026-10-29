@@ -27,12 +27,12 @@ export default function Sidebar({ items, roleLabel, homePath, onNavigate }) {
       </div>
 
       <nav className="vmt-nav">
-        {items.map(({ to, label, icon: Icon, end, count }) => (
+        {items.map(({ to, label, icon: Icon, end, count, countLabel = 'waiting' }) => (
           <NavLink key={to} to={to} end={end} className="vmt-nav-item" onClick={onNavigate}>
             <Icon className="vmt-icon" aria-hidden="true" />
             <span>{label}</span>
             {count > 0 && (
-              <span className="vmt-nav-count" aria-label={`${count} waiting`}>
+              <span className="vmt-nav-count" aria-label={`${count} ${countLabel}`}>
                 {count}
               </span>
             )}

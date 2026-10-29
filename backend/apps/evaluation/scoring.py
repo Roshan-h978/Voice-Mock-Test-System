@@ -1,11 +1,14 @@
 """
 Scoring rules for spoken answers.
 
-    fluency        = 70% delivery (pace, filler words, long pauses) + 30% coherence (Claude)
+    fluency        = 70% delivery (pace, filler words, long pauses) + 30% coherence (AI examiner)
     pronunciation  = audio clarity from the speech-to-text confidence
-                     (Claude's estimate when the transcriber gives no confidence values)
-    grammar        = Claude
+                     (the examiner's estimate when the transcriber gives no confidence values)
+    grammar        = AI examiner
     overall        = weighted average of the three skills (SCORING["WEIGHTS"] in settings)
+
+Content limits: clear, fluent speech that doesn't answer the question, or a very short answer,
+can't score high. Every skill is capped (see content_limit), and the student is told why (score_notes).
 
 An answer is flagged for review when the score is under the threshold, the answer is
 very short, the audio was hard to hear, or it looks off topic.
@@ -59,6 +62,7 @@ class AnswerEvaluation:
     tip: str
     corrections: list
     review_reasons: list
+    score_notes: list
     is_demo: bool = False
 
     @property
@@ -143,6 +147,40 @@ def headline_for(overall) -> str:
     return "Keep practising"
 
 
+def content_limit(*, relevance, answers_question: str, word_count: int, time_limit: int | None) -> tuple[int | None, list[str]]:
+    """The highest any skill may score for this answer, and the reasons shown to the student.
+
+    - Off-topic or partial answers: the cap follows the relevance score (relevance 20 -> 35, 50 -> 65).
+    - Short answers: about one word per second of speaking time earns full credit
+      (60 words for a 60-second question); fewer words lower the cap (30 words -> 62).
+    """
+    r = rules()
+    caps, notes = [], []
+
+    if relevance is not None and (relevance < r["FULL_RELEVANCE"] or answers_question in ("no", "partly")):
+        cap = 15 + relevance
+        if answers_question == "no":
+            cap = min(cap, 40)
+        elif answers_question == "partly":
+            cap = min(cap, 75)
+        if cap < 100:
+            caps.append(cap)
+            if answers_question == "no" or relevance < 30:
+                notes.append("Your answer didn't answer the question, so your scores were limited. Talk about what the question asks.")
+            else:
+                notes.append("Your answer only partly answered the question, so your scores were limited. Cover every part of the question.")
+
+    expected_words = max(15, round((time_limit or 60) * r["WORDS_PER_SECOND"]))
+    if word_count < expected_words:
+        caps.append(round(25 + 75 * word_count / expected_words))
+        notes.append(
+            f"Your answer was short ({word_count} words for {time_limit or 60} seconds), so your scores were limited. "
+            "Speak for most of the time and add a reason or an example."
+        )
+
+    return (min(caps) if caps else None), notes
+
+
 def answer_review_reasons(*, overall, word_count, clarity, relevance) -> list[str]:
     r = rules()
     reasons = []
@@ -184,6 +222,7 @@ def evaluate_answer(
     *,
     question_text: str,
     level: str = "",
+    time_limit: int | None = None,
     recorded_seconds: float | None = None,
     filename: str = "answer.webm",
     content_type: str = "audio/webm",
@@ -195,6 +234,7 @@ def evaluate_answer(
         question=question_text,
         transcript=transcript.text,
         level=level,
+        time_limit=time_limit,
         measurements={
             "words": metrics.word_count,
             "words_per_minute": metrics.words_per_minute,
@@ -207,6 +247,15 @@ def evaluate_answer(
     fluency = clamp_score(metrics.fluency_auto * 0.7 + analysis["coherence"] * 0.3)
     pronunciation = metrics.clarity if metrics.clarity is not None else analysis["pronunciation_estimate"]
     grammar = analysis["grammar"]
+
+    cap, score_notes = content_limit(
+        relevance=analysis["relevance"],
+        answers_question=analysis.get("answers_question", "yes"),
+        word_count=metrics.word_count,
+        time_limit=time_limit,
+    )
+    if cap is not None:
+        fluency, pronunciation, grammar = (min(value, cap) for value in (fluency, pronunciation, grammar))
     overall = overall_score(fluency, pronunciation, grammar)
 
     return AnswerEvaluation(
@@ -232,5 +281,6 @@ def evaluate_answer(
             clarity=metrics.clarity,
             relevance=analysis["relevance"],
         ),
+        score_notes=score_notes,
         is_demo=transcript.is_demo,
     )

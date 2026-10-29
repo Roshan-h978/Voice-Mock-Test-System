@@ -21,7 +21,7 @@ from apps.common.utils import (
     validate_audio_upload,
 )
 from apps.evaluation import feedback, scoring
-from apps.notifications import email_service
+from apps.notifications import email_service, inbox
 from apps.tests_manager.models import MockTest
 
 from .models import FINISHED_STATUSES, Answer, Attempt
@@ -66,6 +66,7 @@ def save_answer(attempt: Attempt, question, audio, recorded_seconds=None) -> Ans
         audio,
         question_text=question.text,
         level=attempt.student.level,
+        time_limit=question.time_limit,
         recorded_seconds=recorded_seconds,
         filename=f"answer{extension}",
         content_type=(audio.content_type or "audio/webm").split(";")[0],
@@ -119,6 +120,8 @@ def submit_attempt(attempt: Attempt) -> Attempt:
     attempt.next_step = summary["next_step"]
     attempt.submitted_at = timezone.now()
     attempt.save()
+    if attempt.status == Attempt.Status.NEEDS_REVIEW:
+        inbox.review_needed(attempt)
     return attempt
 
 
@@ -172,6 +175,7 @@ def review_attempt(
     attempt.reviewer = reviewer
     attempt.reviewed_at = timezone.now()
     attempt.save()
+    inbox.review_published(attempt)
 
     email_sent = False
     if notify_student:
@@ -192,6 +196,7 @@ def rescore_answer(answer: Answer) -> Answer:
             audio,
             question_text=answer.question_text,
             level=answer.attempt.student.level,
+            time_limit=answer.question.time_limit if answer.question else answer.attempt.test.answer_seconds,
             recorded_seconds=answer.duration_seconds,
             filename=f"answer{audio_extension(answer.audio)}",
         )

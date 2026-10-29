@@ -9,7 +9,7 @@ import Modal from '../../components/Modal';
 import PageHeader from '../../components/PageHeader';
 import StatusBadge from '../../components/StatusBadge';
 import TextField from '../../components/TextField';
-import { createTest, deleteTest, getTests, updateTest } from '../../services/adminService';
+import { addQuestions, createTest, deleteTest, generateQuestions, getTests, updateTest } from '../../services/adminService';
 import { getErrorMessage, getFieldErrors } from '../../services/api';
 import { LEVELS } from '../../utils/constants';
 import { formatScore, levelLabel } from '../../utils/formatters';
@@ -20,7 +20,8 @@ const STATUS_TABS = [
   { value: 'draft', label: 'Drafts' },
   { value: 'archived', label: 'Archived' },
 ];
-const EMPTY_TEST = { title: '', description: '', level: 'beginner', prep_seconds: 15, answer_seconds: 60, allow_retake: true };
+const EMPTY_TEST = { title: '', description: '', level: 'beginner', prep_seconds: 15, answer_seconds: 60, allow_retake: true, ai_count: 0 };
+const AI_COUNTS = [0, 3, 4, 5, 6, 8, 10];
 
 export default function ManageTests() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -87,7 +88,7 @@ export default function ManageTests() {
     }
     setSaving(true);
     setFormErrors({});
-    const { id, ...fields } = form;
+    const { id, ai_count: aiCount, ...fields } = form;
     const payload = { ...fields, prep_seconds: Number(fields.prep_seconds), answer_seconds: Number(fields.answer_seconds) };
     try {
       if (id) {
@@ -95,7 +96,18 @@ export default function ManageTests() {
         setNotice('Test saved.');
       } else {
         const created = await createTest(payload);
-        setNotice(`"${created.title}" was created as a draft. Add questions, then publish it.`);
+        let message = `"${created.title}" was created as a draft. Add questions, then publish it.`;
+        if (Number(aiCount) > 0) {
+          // The test is saved either way; the AI questions are a bonus on top.
+          try {
+            const written = await generateQuestions({ test: created.id, count: Number(aiCount), topic: [created.title, created.description].filter(Boolean).join('. ') });
+            await addQuestions(created.id, written.questions);
+            message = `"${created.title}" was created as a draft with ${written.questions.length} AI-written questions. Check them, then publish it.`;
+          } catch (aiError) {
+            message = `"${created.title}" was created as a draft, but the AI couldn't write questions (${getErrorMessage(aiError)}). Add them on the Questions page.`;
+          }
+        }
+        setNotice(message);
       }
       setForm(null);
       load();
@@ -336,6 +348,21 @@ export default function ManageTests() {
               <input type="checkbox" checked={form.allow_retake} onChange={updateField('allow_retake')} />
               Students can take this test more than once
             </label>
+            {!form.id && (
+              <TextField
+                as="select"
+                label="Questions written by AI"
+                value={form.ai_count}
+                onChange={updateField('ai_count')}
+                help="The AI writes questions for this title and level. You can edit or delete them before publishing."
+              >
+                {AI_COUNTS.map((value) => (
+                  <option key={value} value={value}>
+                    {value === 0 ? 'None, I will write them' : `${value} questions`}
+                  </option>
+                ))}
+              </TextField>
+            )}
             <div className="vmt-modal-actions">
               <Button variant="secondary" onClick={() => setForm(null)}>
                 Cancel

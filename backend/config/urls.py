@@ -32,6 +32,7 @@ urlpatterns = [
     path("api/", include("apps.accounts.urls")),
     path("api/", include("apps.tests_manager.urls")),
     path("api/", include("apps.attempts.urls")),
+    path("api/", include("apps.learning.urls")),
     path("api/evaluation/", include("apps.evaluation.urls")),
     path("api/notifications/", include("apps.notifications.urls")),
 ]

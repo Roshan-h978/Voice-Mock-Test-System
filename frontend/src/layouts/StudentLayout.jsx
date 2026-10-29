@@ -1,31 +1,48 @@
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { Outlet } from 'react-router-dom';
-import { History, LayoutDashboard, User } from 'lucide-react';
+import { Bell, BookOpenCheck, History, LayoutDashboard, Mic, TrendingUp, User } from 'lucide-react';
+import LoadingSpinner from '../components/LoadingSpinner';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
+import { NotificationProvider, useNotifications } from '../context/NotificationContext';
 
-const NAV_ITEMS = [
-  { to: '/student', label: 'Dashboard', icon: LayoutDashboard, end: true },
-  { to: '/student/history', label: 'My results', icon: History },
-  { to: '/student/profile', label: 'Profile', icon: User },
-];
-
-/** Student area: sidebar + top bar around the student pages. */
-export default function StudentLayout() {
+function StudentShell() {
   const [navOpen, setNavOpen] = useState(false);
+  const { unread } = useNotifications();
+
+  const navItems = [
+    { to: '/student', label: 'Dashboard', icon: LayoutDashboard, end: true },
+    { to: '/student/practice', label: 'Quick practice', icon: Mic },
+    { to: '/student/progress', label: 'My progress', icon: TrendingUp },
+    { to: '/student/notebook', label: 'Mistakes notebook', icon: BookOpenCheck },
+    { to: '/student/history', label: 'My results', icon: History },
+    { to: '/student/notifications', label: 'Notifications', icon: Bell, count: unread, countLabel: 'unread' },
+    { to: '/student/profile', label: 'Profile', icon: User },
+  ];
 
   return (
     <div className={`vmt-shell${navOpen ? ' is-nav-open' : ''}`}>
-      <Sidebar items={NAV_ITEMS} roleLabel="Student" homePath="/student" onNavigate={() => setNavOpen(false)} />
+      <Sidebar items={navItems} roleLabel="Student" homePath="/student" onNavigate={() => setNavOpen(false)} />
       <div className="vmt-drawer-backdrop" onClick={() => setNavOpen(false)} aria-hidden="true" />
       <div className="vmt-app">
-        <Navbar variant="app" onMenuClick={() => setNavOpen(true)} profilePath="/student/profile" />
+        <Navbar variant="app" onMenuClick={() => setNavOpen(true)} profilePath="/student/profile" notificationsPath="/student/notifications" />
         <main className="vmt-main" id="main">
           <div className="vmt-container">
-            <Outlet />
+            <Suspense fallback={<LoadingSpinner label="Loading…" />}>
+              <Outlet />
+            </Suspense>
           </div>
         </main>
       </div>
     </div>
+  );
+}
+
+/** Student area: sidebar + top bar (with the notifications bell) around the student pages. */
+export default function StudentLayout() {
+  return (
+    <NotificationProvider>
+      <StudentShell />
+    </NotificationProvider>
   );
 }

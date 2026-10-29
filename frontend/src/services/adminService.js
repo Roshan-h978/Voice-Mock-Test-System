@@ -98,6 +98,18 @@ export async function deleteQuestion(questionId) {
   await api.delete(`/admin/questions/${questionId}/`);
 }
 
+/** AI-written suggestions for a test; nothing is saved. payload: { test, count, topic? } */
+export async function generateQuestions(payload) {
+  const { data } = await api.post('/admin/questions/generate/', payload);
+  return data; // { questions: [{ text, hint }], is_demo }
+}
+
+/** Adds several questions at the end of a test. questions: [{ text, hint?, answer_seconds? }] */
+export async function addQuestions(testId, questions) {
+  const { data } = await api.post('/admin/questions/bulk/', { test: testId, questions });
+  return data; // every question of the test
+}
+
 export async function reorderQuestions(testId, orderedIds) {
   const { data } = await api.post('/admin/questions/reorder/', { test: testId, order: orderedIds });
   return data;

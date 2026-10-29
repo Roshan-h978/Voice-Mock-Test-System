@@ -22,22 +22,36 @@ logger = logging.getLogger(__name__)
 ANTHROPIC_VERSION = "2023-06-01"
 TONE_RULES = "Tone: plain, friendly and respectful. Never sarcastic, never joking, no slang, no emoji."
 
+ANSWERS_QUESTION = ("yes", "partly", "no")
 DEFAULT_TIP = "Try to speak for the full time and give one example to support your answer."
 DEFAULT_NEXT_STEP = "Practise one short answer each day and listen back to your recording."
 
 ANSWER_SYSTEM_PROMPT = "\n".join(
     [
-        "You are an English speaking examiner for the Voice Mock Test app.",
-        "You get the question, an automatic transcript of a student's spoken answer, and speaking measurements.",
-        "Judge only what the transcript can show. Ignore punctuation and capital letters, which come from the transcriber.",
+        "You are a strict but fair English speaking examiner for the Voice Mock Test app.",
+        "You get the question, an automatic transcript of a student's spoken answer, the speaking time allowed and speaking measurements.",
+        "Judge only what the transcript shows. Ignore punctuation and capital letters, which come from the transcriber.",
+        "Step 1. Decide if the answer responds to THIS question. answers_question is "
+        '"yes" (it answers what was asked), "partly" (right topic but misses the main point or most of it) '
+        'or "no" (off topic, a memorised text on another subject, or no real answer).',
+        "Step 2. Score each item from 0 to 100 with these bands. Use the whole range: most learners score between 40 and 75. "
+        "Never give a default score such as 70 or 75; every number must follow from the transcript.",
+        "relevance: 85-100 answers every part of the question with details or examples; 60-84 answers it but briefly; "
+        "30-59 only partly answers or drifts away; 0-29 off topic or no real answer.",
+        "coherence: 85-100 clear order, well linked, developed; 60-84 mostly clear with simple linking; "
+        "40-59 jumps between ideas or repeats; 0-39 hard to follow.",
+        "grammar: 85-100 almost no errors and varied structures; 65-84 some errors but meaning is clear; "
+        "45-64 frequent errors or only very simple sentences; 0-44 errors make the meaning hard to follow. "
+        "Under 20 words there is too little evidence: grammar at most 50.",
+        "pronunciation_estimate: a rough guess from words the transcriber seems to have misheard; 70 if there is no sign of a problem.",
+        "An answer that does not respond to the question can still have good grammar, but relevance and coherence must be low.",
         "Reply with one JSON object and nothing else, in this shape:",
-        '{"grammar":0-100,"coherence":0-100,"relevance":0-100,"pronunciation_estimate":0-100,'
-        '"strengths":["..."],"tip":"...","corrections":[{"said":"...","better":"..."}]}',
-        "grammar: accuracy and range of grammar. coherence: how well ideas are organised and linked. "
-        "relevance: how fully the answer addresses the question.",
-        "pronunciation_estimate: a rough guess from words the transcriber seems to have misheard; use 70 if there is no sign of a problem.",
+        '{"answers_question":"yes|partly|no","relevance_reason":"...","relevance":0-100,"coherence":0-100,"grammar":0-100,'
+        '"pronunciation_estimate":0-100,"strengths":["..."],"tip":"...","corrections":[{"said":"...","better":"..."}]}',
+        "relevance_reason: one short sentence saying how well the answer fits the question. "
         'strengths: one or two short sentences starting with "You" or "Your". '
-        "tip: one practical sentence the student can act on next time. corrections: at most two, quoting the student exactly.",
+        "tip: one practical sentence the student can act on next time; if the answer missed the question, the tip says what to talk about. "
+        "corrections: at most two, quoting the student exactly.",
         TONE_RULES,
     ]
 )
@@ -60,8 +74,8 @@ SUMMARY_SYSTEM_PROMPT = "\n".join(
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
-def analyse_answer(*, question: str, transcript: str, level: str, measurements: dict) -> dict:
-    """Grammar, coherence, relevance, strengths, tip and corrections for one answer."""
+def analyse_answer(*, question: str, transcript: str, level: str, measurements: dict, time_limit: int | None = None) -> dict:
+    """Whether the answer fits the question, plus grammar, coherence, strengths, tip and corrections."""
     if settings.EVALUATION_DEMO_MODE:
         return demo_analysis()
 
@@ -69,18 +83,26 @@ def analyse_answer(*, question: str, transcript: str, level: str, measurements: 
         {
             "question": question,
             "student_level": level or "not given",
+            "speaking_time_allowed_seconds": time_limit,
             "transcript": transcript,
             "measurements": measurements,
         }
     )
-    reply = call_model(ANSWER_SYSTEM_PROMPT, user_content, max_tokens=800)
+    # Temperature 0: the same answer gets the same scores.
+    reply = call_model(ANSWER_SYSTEM_PROMPT, user_content, max_tokens=900, temperature=0)
     if reply is None:
         raise EvaluationError()
 
+    relevance = _score(reply.get("relevance"), 50)
+    answers_question = str(reply.get("answers_question") or "").strip().lower()
+    if answers_question not in ANSWERS_QUESTION:
+        answers_question = "yes" if relevance >= 60 else "partly" if relevance >= 30 else "no"
     return {
-        "grammar": _score(reply.get("grammar"), 60),
-        "coherence": _score(reply.get("coherence"), 60),
-        "relevance": _score(reply.get("relevance"), 60),
+        "answers_question": answers_question,
+        "relevance_reason": _text(reply.get("relevance_reason"), 300),
+        "grammar": _score(reply.get("grammar"), 50),
+        "coherence": _score(reply.get("coherence"), 50),
+        "relevance": relevance,
         "pronunciation_estimate": _score(reply.get("pronunciation_estimate"), 70),
         "strengths": _sentences(reply.get("strengths"), limit=2),
         "tip": _text(reply.get("tip")) or DEFAULT_TIP,
@@ -125,7 +147,7 @@ def summarise_attempt(*, test_title: str, level: str, skills: dict, answers: lis
     }
 
 
-def call_model(system: str, user_content: str, *, max_tokens: int = 800):
+def call_model(system: str, user_content: str, *, max_tokens: int = 800, temperature: float = 0.2):
     """Ask the feedback model and return the JSON object in its reply (or None).
 
     Tries the main service first; if it is busy, over its free limit, unreachable or not set up,
@@ -136,9 +158,9 @@ def call_model(system: str, user_content: str, *, max_tokens: int = 800):
     for position, service in enumerate(services):
         try:
             if service.kind == providers.ANTHROPIC:
-                reply = call_claude(system, user_content, max_tokens=max_tokens)
+                reply = call_claude(system, user_content, max_tokens=max_tokens, temperature=temperature)
             else:
-                reply = call_chat_completions(service, system, user_content, max_tokens=max_tokens)
+                reply = call_chat_completions(service, system, user_content, max_tokens=max_tokens, temperature=temperature)
         except EvaluationError as exc:  # includes EvaluationNotConfigured
             last_error = exc
             reply = None
@@ -151,10 +173,10 @@ def call_model(system: str, user_content: str, *, max_tokens: int = 800):
     return None
 
 
-def chat_bodies(service, system: str, user_content: str, max_tokens: int) -> tuple[dict, dict]:
+def chat_bodies(service, system: str, user_content: str, max_tokens: int, temperature: float = 0.2) -> tuple[dict, dict]:
     """The full request (JSON mode, low reasoning) and a basic one for services that refuse an option."""
     messages = [{"role": "system", "content": system}, {"role": "user", "content": user_content}]
-    basic = {"model": service.model, "messages": messages, "temperature": 0.2, "max_tokens": max_tokens * 3}
+    basic = {"model": service.model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens * 3}
     full = dict(basic, response_format={"type": "json_object"})
     if service.model.startswith("openai/gpt-oss") or service.name == "Gemini":
         full["reasoning_effort"] = "low"  # quicker answers and fewer tokens on free tiers
@@ -171,13 +193,13 @@ def post_chat(service, body: dict):
     )
 
 
-def call_chat_completions(service, system: str, user_content: str, *, max_tokens: int = 800, tries: int = 2):
+def call_chat_completions(service, system: str, user_content: str, *, max_tokens: int = 800, temperature: float = 0.2, tries: int = 2):
     """OpenAI-compatible chat API (Groq, Gemini). Returns the JSON object in the reply (or None)."""
     if not service.api_key:
         logger.error("%s is missing. Add it to backend/.env or set EVALUATION_DEMO_MODE=True.", service.key_setting)
         raise EvaluationNotConfigured()
 
-    body, basic = chat_bodies(service, system, user_content, max_tokens)
+    body, basic = chat_bodies(service, system, user_content, max_tokens, temperature)
     simplified = False
     for attempt in range(1, tries + 1):
         try:
@@ -215,7 +237,7 @@ def parse_chat_reply(payload: dict):
     return _json_object(text)
 
 
-def call_claude(system: str, user_content: str, *, max_tokens: int = 800, tries: int = 2):
+def call_claude(system: str, user_content: str, *, max_tokens: int = 800, temperature: float = 0.2, tries: int = 2):
     """Send one message to Claude and return the JSON object in its reply (or None)."""
     if not settings.ANTHROPIC_API_KEY:
         logger.error("ANTHROPIC_API_KEY is missing. Add it to backend/.env or set EVALUATION_DEMO_MODE=True.")
@@ -230,6 +252,7 @@ def call_claude(system: str, user_content: str, *, max_tokens: int = 800, tries:
     body = {
         "model": settings.SCORING_MODEL,
         "max_tokens": max_tokens,
+        "temperature": temperature,
         "system": system,
         "messages": [{"role": "user", "content": user_content}],
     }
@@ -324,6 +347,8 @@ def _fallback_summary(overall, answers) -> dict:
 
 def demo_analysis() -> dict:
     return {
+        "answers_question": "yes",
+        "relevance_reason": "The answer describes a favourite place and explains why.",
         "grammar": 74,
         "coherence": 78,
         "relevance": 86,

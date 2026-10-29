@@ -271,6 +271,11 @@ export default function SpeakingTest() {
                   Score for this answer: <strong className="vmt-num">{formatScore(lastAnswer.overall)}</strong>. Your full
                   feedback is on the results page.
                 </p>
+                {lastAnswer.score_notes?.[0] && (
+                  <p className="body-sm" style={{ color: 'var(--warning)' }}>
+                    {lastAnswer.score_notes[0]}
+                  </p>
+                )}
               </div>
             ) : (
               <h2 className="title-md">All your answers are saved</h2>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ChevronDown, ChevronUp, ListChecks, Pencil, Plus, Send, Trash2 } from 'lucide-react';
 import { useParams } from 'react-router-dom';
+import AiQuestionWriter from '../../components/AiQuestionWriter';
 import Alert from '../../components/Alert';
 import Button from '../../components/Button';
 import EmptyState from '../../components/EmptyState';
@@ -320,6 +321,16 @@ export default function ManageQuestions() {
           ))
         )}
       </section>
+
+      {!archived && editingId === null && (
+        <AiQuestionWriter
+          test={test}
+          onAdded={(all, added) => {
+            setQuestions(all);
+            setNotice(added === 1 ? '1 question added.' : `${added} questions added.`);
+          }}
+        />
+      )}
 
       {!archived && (
         // Hidden (not removed) while another question is being edited, so a half-written new question is kept.

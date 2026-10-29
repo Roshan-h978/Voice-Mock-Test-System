@@ -356,3 +356,81 @@ class GoogleErrorTests(APITestCase):
             rows = self.client.post(reverse("evaluation-check")).data["results"]
         self.assertIn("error 403", rows[2]["detail"])
         self.assertIn("Generative Language API has not been used", rows[2]["detail"])
+
+
+# ---------------------------------------------------------------------------
+# Content limits: scores must follow the question, not only how clearly someone speaks
+# ---------------------------------------------------------------------------
+def long_transcript(words=80, seconds=40):
+    """Clear, fluent speech: good pace, no fillers, no pauses, high transcriber confidence."""
+    text = " ".join(["word"] * words)
+    return Transcript(text=text, duration=seconds, segments=[Segment(0, seconds, text, avg_logprob=-0.1, no_speech_prob=0.01)])
+
+
+def analysis(**changes):
+    return {**feedback.demo_analysis(), **changes}
+
+
+@override_settings(EVALUATION_DEMO_MODE=True)
+class ContentLimitTests(SimpleTestCase):
+    def evaluate(self, transcript, result, time_limit=60):
+        with mock.patch("apps.evaluation.scoring.transcribe", return_value=transcript), mock.patch(
+            "apps.evaluation.feedback.analyse_answer", return_value=result
+        ):
+            return scoring.evaluate_answer(io.BytesIO(b"audio"), question_text="Describe your favourite place.", time_limit=time_limit)
+
+    def test_fluent_off_topic_answer_scores_low(self):
+        result = self.evaluate(long_transcript(), analysis(answers_question="no", relevance=10, grammar=80, coherence=70))
+        self.assertLessEqual(max(result.fluency, result.pronunciation, result.grammar), 25)
+        self.assertLessEqual(result.overall, 25)
+        self.assertIn("didn't answer the question", result.score_notes[0])
+        self.assertIn("Answer may be off topic", result.review_reasons)
+
+    def test_partly_answered_question_is_capped(self):
+        result = self.evaluate(long_transcript(), analysis(answers_question="partly", relevance=50, grammar=80, coherence=80))
+        self.assertLessEqual(result.overall, 65)
+        self.assertIn("only partly answered", result.score_notes[0])
+
+    def test_short_answer_is_capped_by_length(self):
+        result = self.evaluate(long_transcript(words=20, seconds=8), analysis(grammar=85, coherence=85, relevance=90))
+        self.assertEqual(max(result.fluency, result.pronunciation, result.grammar), 50)  # 25 + 75 * 20/60
+        self.assertIn("short (20 words for 60 seconds)", result.score_notes[0])
+
+    def test_short_time_limit_expects_fewer_words(self):
+        result = self.evaluate(long_transcript(words=30, seconds=15), analysis(relevance=90), time_limit=30)
+        self.assertEqual(result.score_notes, [])
+
+    def test_good_answer_is_not_limited(self):
+        result = self.evaluate(long_transcript(), analysis(relevance=90, grammar=82, coherence=84))
+        self.assertEqual(result.score_notes, [])
+        self.assertGreater(result.overall, 80)
+        self.assertEqual(result.grammar, 82)
+
+    def test_limit_rules(self):
+        cap, notes = scoring.content_limit(relevance=40, answers_question="partly", word_count=100, time_limit=60)
+        self.assertEqual(cap, 55)
+        self.assertEqual(len(notes), 1)
+        cap, _ = scoring.content_limit(relevance=95, answers_question="no", word_count=100, time_limit=60)
+        self.assertEqual(cap, 40)  # the examiner's "no" wins over a high number
+        self.assertEqual(scoring.content_limit(relevance=75, answers_question="yes", word_count=60, time_limit=60), (None, []))
+
+
+@override_settings(**LIVE_KEYS)
+class ExaminerPromptTests(SimpleTestCase):
+    def test_question_time_and_rubric_are_sent_with_temperature_zero(self):
+        reply = '{"answers_question": "no", "relevance_reason": "It talks about football, not a place.", "relevance": 12, "coherence": 55, "grammar": 70}'
+        with mock.patch("apps.evaluation.feedback.requests.post", return_value=fake_response(payload=claude_payload(reply))) as post:
+            result = feedback.analyse_answer(question="Describe a place", transcript="I like football", level="", measurements={}, time_limit=45)
+        body = post.call_args.kwargs["json"]
+        self.assertEqual(body["temperature"], 0)
+        self.assertIn('"speaking_time_allowed_seconds": 45', body["messages"][0]["content"])
+        self.assertIn("answers_question", body["system"])
+        self.assertIn("Never give a default score", body["system"])
+        self.assertEqual(result["answers_question"], "no")
+        self.assertEqual(result["relevance_reason"], "It talks about football, not a place.")
+
+    def test_missing_verdict_is_worked_out_from_relevance(self):
+        reply = '{"relevance": 20, "coherence": 40, "grammar": 60}'
+        with mock.patch("apps.evaluation.feedback.requests.post", return_value=fake_response(payload=claude_payload(reply))):
+            result = feedback.analyse_answer(question="Q", transcript="text here", level="", measurements={})
+        self.assertEqual(result["answers_question"], "no")

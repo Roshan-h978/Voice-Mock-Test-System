@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Award, ClipboardList, KeyRound, Mic, PlayCircle, TrendingUp } from 'lucide-react';
+import { ArrowRight, Award, BookOpenCheck, ClipboardList, KeyRound, Mic, PlayCircle, TrendingUp } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import Alert from '../../components/Alert';
 import Button from '../../components/Button';
@@ -15,6 +15,12 @@ import { getMyAttempts, getMyStats } from '../../services/resultService';
 import { getTests } from '../../services/testService';
 import { SKILLS } from '../../utils/constants';
 import { firstName, formatDate, formatScore, levelLabel, pluralize, skillLabel } from '../../utils/formatters';
+
+const SHORTCUTS = [
+  { to: '/student/practice', title: 'Quick practice', text: 'One question, feedback in seconds', icon: Mic },
+  { to: '/student/progress', title: 'My progress', text: 'Your scores over time', icon: TrendingUp },
+  { to: '/student/notebook', title: 'Mistakes notebook', text: 'Corrections and tips to learn', icon: BookOpenCheck },
+];
 
 export default function StudentDashboard() {
   const { user } = useAuth();
@@ -74,6 +80,21 @@ export default function StudentDashboard() {
           </Button>
         </div>
       )}
+
+      <nav className="vmt-shortcuts" aria-label="Practice tools">
+        {SHORTCUTS.map(({ to, title, text, icon: Icon }) => (
+          <Link key={to} to={to} className="vmt-shortcut">
+            <span className="vmt-shortcut-icon" aria-hidden="true">
+              <Icon className="vmt-icon" />
+            </span>
+            <span className="vmt-shortcut-text">
+              <span className="title-sm">{title}</span>
+              <span className="body-sm vmt-muted">{text}</span>
+            </span>
+            <ArrowRight className="vmt-icon vmt-shortcut-arrow" aria-hidden="true" />
+          </Link>
+        ))}
+      </nav>
 
       {!loading && !error && stats && (
         <>

@@ -116,6 +116,28 @@ New Google users become students. Someone who already has an account with the sa
 - The admin dashboard's **Setup check** shows which service and models are in use.
 - Email (Gmail): `EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend`, `EMAIL_HOST_USER=you@gmail.com`, `EMAIL_HOST_PASSWORD=<16-character app password>`, `DEFAULT_FROM_EMAIL=Voice Mock Test <you@gmail.com>`; then use **Send me a test email** on the admin dashboard.
 
+### How answers are scored
+
+- **Fluency** comes from pace, filler words and pauses, plus how well the ideas are linked. **Pronunciation** comes from how clearly the speech-to-text heard each word. **Grammar** comes from the AI examiner.
+- The AI examiner first decides whether the answer responds to the question (yes, partly or no), then scores with a fixed rubric at temperature 0, so the same answer gets the same score.
+- Scores follow the question: an off-topic answer can't score more than about 40%, a partly relevant one is limited by how relevant it is, and a short answer (about one word per second of speaking time earns full credit) is limited too. The student sees **Why this score is limited** under the answer.
+- The limits are in `apps/evaluation/scoring.py` (`content_limit`) and `SCORING` in `config/settings.py`.
+
+### AI-written questions
+
+- Admins: **Write questions with AI** on a test's Questions page (suggestions to edit, untick or add), or **Questions written by AI** in the **New test** form.
+- Students: **Quick practice** can ask the AI for a new question on a topic.
+- Both use the same AI key as scoring. In demo mode the questions come from a built-in bank. Limits per person: `THROTTLE_AI` (default 30 an hour) for writing questions and `THROTTLE_PRACTICE` (default 60 an hour) for scoring practice answers.
+
+### Student pages
+
+| Page | What it does |
+| --- | --- |
+| Quick practice | One question (AI-written on a topic, or from the published tests), record, feedback straight away. Practice answers never count in test results. |
+| My progress | Score chart over time (tests and practice), skill trends, the skill to work on next, practice calendar and streak, best score per test |
+| Mistakes notebook | Every correction and tip from tests and practice, grouped, with "I've learned this" ticks |
+| Notifications | Bell in the top bar: teacher reviews and new tests (students), tests that need a review (admins) |
+
 ## Tests
 
 ```
@@ -130,8 +152,9 @@ python manage.py test
 | `apps/accounts/` | users, roles, sign-in, Google sign-in, invitations, password reset, `create_admin` |
 | `apps/tests_manager/` | mock tests, questions, `seed_demo` |
 | `apps/attempts/` | taking tests, answers, results, reviews, dashboard numbers, reports |
-| `apps/evaluation/` | speech-to-text, scoring rules, written feedback |
-| `apps/notifications/` | emails and endpoints for optional n8n automations |
+| `apps/evaluation/` | speech-to-text, scoring rules, written feedback, AI-written questions |
+| `apps/learning/` | Quick practice, Mistakes notebook, My progress |
+| `apps/notifications/` | in-app notifications (the bell), emails and endpoints for optional n8n automations |
 | `apps/common/` | shared helpers and permissions |
 
 The API is served under `/api/`; the frontend's `src/services/` folder shows every call it makes.

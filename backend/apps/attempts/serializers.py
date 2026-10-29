@@ -39,6 +39,7 @@ class AnswerSerializer(serializers.ModelSerializer):
             "corrections",
             "needs_review",
             "review_reasons",
+            "score_notes",
             "is_demo",
             "created_at",
             "updated_at",

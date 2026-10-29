@@ -10,12 +10,17 @@ from rest_framework.response import Response
 from apps.accounts.permissions import IsAdmin
 from apps.attempts.models import FINISHED_STATUSES
 from apps.attempts.services import delete_attempts
+from apps.common.throttles import AIWriteThrottle
 from apps.common.utils import ServiceError
+from apps.evaluation import question_writer
+from apps.notifications import inbox
 
 from .models import MockTest, Question
 from .serializers import (
     ARCHIVED_QUESTIONS_MESSAGE,
     AdminQuestionSerializer,
+    BulkQuestionsSerializer,
+    GenerateQuestionsSerializer,
     AdminTestSerializer,
     TestDetailSerializer,
     TestSummarySerializer,
@@ -91,6 +96,12 @@ class AdminTestViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
 
+    def perform_update(self, serializer):
+        first_publish = serializer.instance.published_at is None
+        test = serializer.save()
+        if first_publish and test.status == MockTest.Status.PUBLISHED:
+            inbox.test_published(test)
+
     def destroy(self, request, *args, **kwargs):
         """A test that students have taken is deleted only with ?with_results=true (its results go too)."""
         test = self.get_object()
@@ -131,6 +142,35 @@ class AdminQuestionViewSet(viewsets.ModelViewSet):
         with transaction.atomic():
             instance.delete()
             renumber_questions(test)
+
+    @action(detail=False, methods=["post"], throttle_classes=[AIWriteThrottle])
+    def generate(self, request):
+        """Body: {"test": 3, "count": 3, "topic": "optional"}. Returns suggestions only; nothing is saved."""
+        serializer = GenerateQuestionsSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        test = serializer.validated_data["test"]
+        questions, is_demo = question_writer.write_questions(
+            count=serializer.validated_data["count"],
+            level=test.level,
+            topic=serializer.validated_data.get("topic", ""),
+            title=test.title,
+            description=test.description,
+            existing=list(test.questions.values_list("text", flat=True)),
+            answer_seconds=test.answer_seconds,
+        )
+        return Response({"questions": questions, "is_demo": is_demo})
+
+    @action(detail=False, methods=["post"])
+    def bulk(self, request):
+        """Body: {"test": 3, "questions": [{"text": "...", "hint": "...", "answer_seconds": null}]}. Adds them all at the end."""
+        serializer = BulkQuestionsSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        test = serializer.validated_data["test"]
+        with transaction.atomic():
+            for item in serializer.validated_data["questions"]:
+                Question.objects.create(test=test, **item)
+        questions = Question.objects.filter(test=test).select_related("test").order_by("order", "id")
+        return Response(AdminQuestionSerializer(questions, many=True).data, status=status.HTTP_201_CREATED)
 
     @action(detail=False, methods=["post"])
     def reorder(self, request):

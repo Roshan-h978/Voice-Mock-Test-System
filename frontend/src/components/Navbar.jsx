@@ -5,6 +5,7 @@ import { ROLE_HOME } from '../utils/constants';
 import { initials } from '../utils/formatters';
 import Brand from './Brand';
 import Button from './Button';
+import NotificationBell from './NotificationBell';
 
 const todayFormat = new Intl.DateTimeFormat('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
 
@@ -12,7 +13,7 @@ const todayFormat = new Intl.DateTimeFormat('en-GB', { weekday: 'long', day: 'nu
  * variant="public": top bar of the landing page (brand + sign-in links).
  * variant="app": top bar inside the student/admin area (menu button on small screens + user).
  */
-export default function Navbar({ variant = 'public', onMenuClick, profilePath }) {
+export default function Navbar({ variant = 'public', onMenuClick, profilePath, notificationsPath }) {
   const { user } = useAuth();
 
   if (variant === 'app') {
@@ -31,15 +32,18 @@ export default function Navbar({ variant = 'public', onMenuClick, profilePath })
           <span className="body-sm vmt-muted">{todayFormat.format(new Date())}</span>
         </div>
         {user && (
-          <Link to={profilePath} className="vmt-topbar-right vmt-person" style={{ textDecoration: 'none' }} aria-label="Open my profile">
-            <span className="vmt-person-text vmt-hide-sm" style={{ textAlign: 'right' }}>
-              <span className="label">{user.full_name}</span>
-              <span className="caption vmt-muted">{user.email}</span>
-            </span>
-            <span className="vmt-avatar" aria-hidden="true">
-              {initials(user.full_name)}
-            </span>
-          </Link>
+          <div className="vmt-topbar-right">
+            {notificationsPath && <NotificationBell allPath={notificationsPath} />}
+            <Link to={profilePath} className="vmt-person" style={{ textDecoration: 'none' }} aria-label="Open my profile">
+              <span className="vmt-person-text vmt-hide-sm" style={{ textAlign: 'right' }}>
+                <span className="label">{user.full_name}</span>
+                <span className="caption vmt-muted">{user.email}</span>
+              </span>
+              <span className="vmt-avatar" aria-hidden="true">
+                {initials(user.full_name)}
+              </span>
+            </Link>
+          </div>
         )}
       </header>
     );

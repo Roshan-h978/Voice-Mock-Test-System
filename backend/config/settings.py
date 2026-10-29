@@ -69,6 +69,7 @@ LOCAL_APPS = [
     "apps.attempts",
     "apps.evaluation",
     "apps.notifications",
+    "apps.learning",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -194,6 +195,8 @@ REST_FRAMEWORK = {
         "anon": env("THROTTLE_ANON", default="60/min"),
         "user": env("THROTTLE_USER", default="600/min"),
         "auth": env("THROTTLE_AUTH", default="30/min"),
+        "ai": env("THROTTLE_AI", default="30/hour"),
+        "practice": env("THROTTLE_PRACTICE", default="60/hour"),
     },
 }
 
@@ -284,6 +287,9 @@ SCORING = {
     "MIN_WORDS": 15,
     "MIN_CLARITY": 50,
     "MIN_RELEVANCE": 40,
+    # Content limits (apps/evaluation/scoring.py: content_limit)
+    "FULL_RELEVANCE": 70,  # relevance from here up doesn't limit the scores
+    "WORDS_PER_SECOND": 1.0,  # words expected per second of speaking time for full credit
     "IDEAL_WPM_MIN": 100,
     "IDEAL_WPM_MAX": 160,
     "LONG_PAUSE_SECONDS": 1.5,

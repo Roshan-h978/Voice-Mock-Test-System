@@ -1,13 +1,15 @@
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
-import { ChartColumn, ClipboardList, LayoutDashboard, MessageSquare, User, Users } from 'lucide-react';
+import { Bell, ChartColumn, ClipboardList, LayoutDashboard, MessageSquare, User, Users } from 'lucide-react';
+import LoadingSpinner from '../components/LoadingSpinner';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
+import { NotificationProvider, useNotifications } from '../context/NotificationContext';
 import { getAttempts } from '../services/adminService';
 
-/** Admin area: sidebar (with the review-queue count) + top bar around the admin pages. */
-export default function AdminLayout() {
+function AdminShell() {
   const [navOpen, setNavOpen] = useState(false);
+  const { unread } = useNotifications();
   const [reviewCount, setReviewCount] = useState(0);
   const location = useLocation();
 
@@ -28,6 +30,7 @@ export default function AdminLayout() {
     { to: '/admin/tests', label: 'Mock tests', icon: ClipboardList },
     { to: '/admin/reviews', label: 'Reviews', icon: MessageSquare, count: reviewCount },
     { to: '/admin/reports', label: 'Reports', icon: ChartColumn },
+    { to: '/admin/notifications', label: 'Notifications', icon: Bell, count: unread, countLabel: 'unread' },
     { to: '/admin/profile', label: 'Profile', icon: User },
   ];
 
@@ -36,13 +39,24 @@ export default function AdminLayout() {
       <Sidebar items={navItems} roleLabel="Admin" homePath="/admin" onNavigate={() => setNavOpen(false)} />
       <div className="vmt-drawer-backdrop" onClick={() => setNavOpen(false)} aria-hidden="true" />
       <div className="vmt-app">
-        <Navbar variant="app" onMenuClick={() => setNavOpen(true)} profilePath="/admin/profile" />
+        <Navbar variant="app" onMenuClick={() => setNavOpen(true)} profilePath="/admin/profile" notificationsPath="/admin/notifications" />
         <main className="vmt-main" id="main">
           <div className="vmt-container">
-            <Outlet />
+            <Suspense fallback={<LoadingSpinner label="Loading…" />}>
+              <Outlet />
+            </Suspense>
           </div>
         </main>
       </div>
     </div>
+  );
+}
+
+/** Admin area: sidebar (with the review-queue count) + top bar (with the notifications bell) around the admin pages. */
+export default function AdminLayout() {
+  return (
+    <NotificationProvider>
+      <AdminShell />
+    </NotificationProvider>
   );
 }

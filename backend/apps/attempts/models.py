@@ -111,6 +111,7 @@ class Answer(models.Model):
     tip = models.TextField(blank=True)
     corrections = models.JSONField(default=list, blank=True)
     review_reasons = models.JSONField(default=list, blank=True)
+    score_notes = models.JSONField(default=list, blank=True, help_text="Why the scores were limited, shown to the student.")
     needs_review = models.BooleanField(default=False)
     is_demo = models.BooleanField(default=False, help_text="Scored in demo mode (sample values).")
 

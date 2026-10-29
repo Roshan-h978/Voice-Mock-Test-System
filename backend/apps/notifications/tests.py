@@ -106,3 +106,81 @@ class EmailServiceTests(SimpleTestCase):
                 email_service.send_invitation(
                     email="a@example.com", name="", role="student", link="http://x", invited_by="Nisha", expires_at=timezone.now()
                 )
+
+
+# ---------------------------------------------------------------------------
+# In-app notifications (the bell)
+# ---------------------------------------------------------------------------
+@override_settings(EVALUATION_DEMO_MODE=True, EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend", EMAIL_DELIVERY="django")
+class InAppNotificationTests(APITestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user("nisha@example.com", "Speak-Clearly-2026", full_name="Nisha Adhikari", role="admin")
+        self.student = User.objects.create_user("aarati@example.com", "Speak-Clearly-2026", full_name="Aarati Sharma")
+        self.other = User.objects.create_user("bikash@example.com", "Speak-Clearly-2026", full_name="Bikash Thapa")
+        self.test = MockTest.objects.create(title="Everyday conversation")
+        Question.objects.create(test=self.test, text="Describe your favourite place.")
+
+    def notifications(self, user):
+        self.client.force_authenticate(user)
+        return self.client.get(reverse("notifications")).data["results"]
+
+    def test_publishing_a_test_tells_every_student_once(self):
+        self.client.force_authenticate(self.admin)
+        url = reverse("admin-tests-detail", args=[self.test.pk])
+        self.assertEqual(self.client.patch(url, {"status": "published"}, format="json").status_code, 200)
+        rows = self.notifications(self.student)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["kind"], "test_published")
+        self.assertEqual(rows[0]["link"], f"/student/tests/{self.test.pk}")
+        self.assertEqual(len(self.notifications(self.other)), 1)
+        self.assertEqual(self.notifications(self.admin), [])
+        # Archive and publish again: no second notification.
+        self.client.force_authenticate(self.admin)
+        self.client.patch(url, {"status": "archived"}, format="json")
+        self.client.patch(url, {"status": "published"}, format="json")
+        self.assertEqual(len(self.notifications(self.student)), 1)
+
+    def test_review_tells_the_student_and_flag_tells_admins(self):
+        attempt = Attempt.objects.create(student=self.student, test=self.test, status=Attempt.Status.NEEDS_REVIEW, overall=50)
+        from apps.notifications import inbox
+
+        inbox.review_needed(attempt)
+        admin_rows = self.notifications(self.admin)
+        self.assertEqual(admin_rows[0]["title"], "Aarati Sharma's test needs a review")
+        self.assertEqual(admin_rows[0]["link"], f"/admin/reviews/{attempt.pk}")
+
+        self.client.force_authenticate(self.admin)
+        response = self.client.post(reverse("admin-attempt-review", args=[attempt.pk]), {"fluency": 70, "notify_student": False}, format="json")
+        self.assertEqual(response.status_code, 200)
+        rows = self.notifications(self.student)
+        self.assertEqual(rows[0]["kind"], "review_published")
+        self.assertIn("Everyday conversation", rows[0]["title"])
+        self.assertEqual(self.notifications(self.other), [])
+
+    def test_unread_count_mark_read_and_read_all(self):
+        from apps.notifications.models import Notification
+
+        first = Notification.objects.create(user=self.student, kind="test_published", title="One")
+        Notification.objects.create(user=self.student, kind="test_published", title="Two")
+        Notification.objects.create(user=self.other, kind="test_published", title="Not yours")
+        self.client.force_authenticate(self.student)
+        self.assertEqual(self.client.get(reverse("notifications-unread-count")).data["count"], 2)
+        self.assertTrue(self.client.post(reverse("notifications-read", args=[first.pk])).data["is_read"])
+        self.assertEqual(self.client.get(reverse("notifications-unread-count")).data["count"], 1)
+        self.assertEqual(len(self.client.get(reverse("notifications"), {"unread": 1}).data["results"]), 1)
+        self.assertEqual(self.client.post(reverse("notifications-read-all")).data["updated"], 1)
+        self.assertEqual(self.client.get(reverse("notifications-unread-count")).data["count"], 0)
+        other = Notification.objects.get(user=self.other)
+        self.assertEqual(self.client.post(reverse("notifications-read", args=[other.pk])).status_code, 404)
+
+    def test_deleting_the_result_removes_its_notifications(self):
+        from apps.notifications.models import Notification
+
+        attempt = Attempt.objects.create(student=self.student, test=self.test, status=Attempt.Status.REVIEWED, overall=70)
+        Notification.objects.create(user=self.student, kind="review_published", title="Reviewed", attempt=attempt)
+        self.client.force_authenticate(self.admin)
+        self.client.delete(reverse("admin-attempt-detail", args=[attempt.pk]))
+        self.assertFalse(Notification.objects.filter(user=self.student).exists())
+
+    def test_needs_sign_in(self):
+        self.assertEqual(self.client.get(reverse("notifications")).status_code, 401)

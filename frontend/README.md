@@ -38,14 +38,14 @@ The shapes (sound rings, waveform bars, score arc) are in `src/components/Shapes
 
 | Folder | What's inside |
 | --- | --- |
-| `src/pages/common` | Home, sign-in, sign-up, forgot / reset password |
-| `src/pages/student` | Dashboard, test instructions, speaking test, results, history, profile |
+| `src/pages/common` | Home, sign-in, sign-up, forgot / reset password, privacy, terms, notifications |
+| `src/pages/student` | Dashboard, test instructions, speaking test, results, history, Quick practice, My progress, Mistakes notebook, profile |
 | `src/pages/admin` | Dashboard, students, tests, questions, reviews, reports |
 | `src/components` | Shared pieces: buttons, fields, recorder, Google button, sidebar, dialogs, score ring… |
 | `src/layouts` | Student and admin page frames (sidebar + top bar) |
 | `src/services` | Every API call (axios, automatic token refresh) |
 | `src/hooks` | `useAudioRecorder` (microphone recording) |
-| `src/context` | Signed-in user |
+| `src/context` | Signed-in user, unread notifications count |
 | `src/styles` | Design tokens (`variables.css`) and all styles (`global.css`) |
 
 Recording needs a current browser and either `http://localhost` or `https://`. Allow the microphone when the browser asks.
