@@ -2,7 +2,9 @@
 
 from rest_framework import serializers
 
+from apps.accounts.models import User
 from apps.attempts.models import FINISHED_STATUSES, Attempt
+from apps.evaluation.question_writer import STYLES
 
 from .models import MockTest, Question
 
@@ -159,6 +161,43 @@ class NewQuestionSerializer(serializers.Serializer):
 class BulkQuestionsSerializer(serializers.Serializer):
     test = EditableTestField(queryset=MockTest.objects.all())
     questions = NewQuestionSerializer(many=True, allow_empty=False, max_length=20)
+
+
+class AiWriteSerializer(serializers.Serializer):
+    """The AI generator page: questions (and optionally a title) from a topic."""
+
+    topic = serializers.CharField(max_length=300)
+    level = serializers.ChoiceField(choices=User.Level.choices, default=User.Level.INTERMEDIATE)
+    count = serializers.IntegerField(min_value=1, max_value=10, default=5)
+    answer_seconds = serializers.IntegerField(min_value=10, max_value=300, default=60)
+    style = serializers.ChoiceField(choices=[(key, key) for key in STYLES], default="mixed")
+    with_title = serializers.BooleanField(default=False)
+    test = EditableTestField(queryset=MockTest.objects.all(), required=False, allow_null=True, default=None)
+    exclude = serializers.ListField(child=serializers.CharField(max_length=1000), required=False, max_length=60, default=list)
+
+    def validate_topic(self, value):
+        value = " ".join(value.split())
+        if len(value) < 3:
+            raise serializers.ValidationError("Describe the topic in a few words.")
+        return value
+
+
+class AiCreateTestSerializer(serializers.Serializer):
+    """Save the AI generator's result as a new draft test with its questions."""
+
+    title = serializers.CharField(max_length=150)
+    description = serializers.CharField(max_length=1000, required=False, allow_blank=True, default="")
+    level = serializers.ChoiceField(choices=User.Level.choices, default=User.Level.INTERMEDIATE)
+    prep_seconds = serializers.IntegerField(min_value=0, max_value=300, default=15)
+    answer_seconds = serializers.IntegerField(min_value=10, max_value=300, default=60)
+    allow_retake = serializers.BooleanField(default=True)
+    questions = NewQuestionSerializer(many=True, allow_empty=False, max_length=20)
+
+    def validate_title(self, value):
+        value = " ".join(value.split())
+        if len(value) < 3:
+            raise serializers.ValidationError("Give the test a title of at least 3 characters.")
+        return value
 
 
 class AdminTestSerializer(serializers.ModelSerializer):

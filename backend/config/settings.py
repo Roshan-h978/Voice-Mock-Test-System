@@ -196,6 +196,7 @@ REST_FRAMEWORK = {
         "user": env("THROTTLE_USER", default="600/min"),
         "auth": env("THROTTLE_AUTH", default="30/min"),
         "ai": env("THROTTLE_AI", default="30/hour"),
+        "ai_admin": env("THROTTLE_AI_ADMIN", default="120/hour"),
         "practice": env("THROTTLE_PRACTICE", default="60/hour"),
     },
 }

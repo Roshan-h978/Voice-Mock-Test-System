@@ -6,11 +6,12 @@ from rest_framework import generics, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from apps.accounts.permissions import IsAdmin
 from apps.attempts.models import FINISHED_STATUSES
 from apps.attempts.services import delete_attempts
-from apps.common.throttles import AIWriteThrottle
+from apps.common.throttles import AdminAIWriteThrottle
 from apps.common.utils import ServiceError
 from apps.evaluation import question_writer
 from apps.notifications import inbox
@@ -19,6 +20,8 @@ from .models import MockTest, Question
 from .serializers import (
     ARCHIVED_QUESTIONS_MESSAGE,
     AdminQuestionSerializer,
+    AiCreateTestSerializer,
+    AiWriteSerializer,
     BulkQuestionsSerializer,
     GenerateQuestionsSerializer,
     AdminTestSerializer,
@@ -143,7 +146,7 @@ class AdminQuestionViewSet(viewsets.ModelViewSet):
             instance.delete()
             renumber_questions(test)
 
-    @action(detail=False, methods=["post"], throttle_classes=[AIWriteThrottle])
+    @action(detail=False, methods=["post"], throttle_classes=[AdminAIWriteThrottle])
     def generate(self, request):
         """Body: {"test": 3, "count": 3, "topic": "optional"}. Returns suggestions only; nothing is saved."""
         serializer = GenerateQuestionsSerializer(data=request.data)
@@ -196,3 +199,55 @@ def renumber_questions(test) -> None:
     for position, question in enumerate(test.questions.order_by("order", "id"), start=1):
         if question.order != position:
             Question.objects.filter(pk=question.pk).update(order=position)
+
+
+# ---------------------------------------------------------------------------
+# AI generator page (admins)
+# ---------------------------------------------------------------------------
+class AdminAiWriteView(APIView):
+    """POST {topic, level, count, answer_seconds, style, with_title, test?, exclude?}.
+
+    Returns {"questions": [...], "is_demo"} plus "title" and "description" when with_title is true.
+    Nothing is saved. `test` and `exclude` keep the AI from repeating questions.
+    """
+
+    permission_classes = [IsAdmin]
+    throttle_classes = [AdminAIWriteThrottle]
+
+    def post(self, request):
+        serializer = AiWriteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        existing = list(data["exclude"])
+        if data["test"] is not None:
+            existing += list(data["test"].questions.values_list("text", flat=True))
+        options = {
+            "topic": data["topic"],
+            "count": data["count"],
+            "level": data["level"],
+            "answer_seconds": data["answer_seconds"],
+            "style": data["style"],
+            "existing": existing,
+        }
+        if data["with_title"]:
+            return Response(question_writer.write_test(**options))
+        questions, is_demo = question_writer.write_questions(**options)
+        return Response({"questions": questions, "is_demo": is_demo})
+
+
+class AdminAiCreateTestView(APIView):
+    """POST {title, description, level, prep_seconds, answer_seconds, allow_retake, questions: [...]}: a new draft test."""
+
+    permission_classes = [IsAdmin]
+
+    def post(self, request):
+        serializer = AiCreateTestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = dict(serializer.validated_data)
+        questions = data.pop("questions")
+        with transaction.atomic():
+            test = MockTest.objects.create(created_by=request.user, status=MockTest.Status.DRAFT, **data)
+            for item in questions:
+                Question.objects.create(test=test, **item)
+        test = MockTest.objects.with_question_count().select_related("created_by").get(pk=test.pk)
+        return Response(AdminTestSerializer(test).data, status=status.HTTP_201_CREATED)

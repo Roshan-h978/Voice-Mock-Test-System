@@ -32,6 +32,7 @@ TOPICS = {
     "interview": "Job interview",
 }
 
+QUESTIONS_REPLY = 'Reply with one JSON object and nothing else: {"questions":[{"text":"...","hint":"..."}]}'
 SYSTEM_PROMPT = "\n".join(
     [
         "You write speaking-test questions for English learners using the Voice Mock Test app.",
@@ -41,8 +42,24 @@ SYSTEM_PROMPT = "\n".join(
         "no politics, religion, health conditions, money troubles or other sensitive personal topics; "
         "do not repeat or closely copy any question in existing_questions; every question in your list must be different.",
         "hint: what a good answer could include, at most 12 words, no full stop needed.",
-        'Reply with one JSON object and nothing else: {"questions":[{"text":"...","hint":"..."}]}',
+        QUESTIONS_REPLY,
     ]
+)
+
+# Question styles admins can ask for in the AI generator (value -> what the AI is told).
+STYLES = {
+    "mixed": "a mix of the other styles",
+    "experience": "personal experience: describe something that happened to the student and how they felt",
+    "opinion": "opinion with reasons: give a view on a statement and explain why, with an example",
+    "describe": "describe and explain: a person, place, object, event or process",
+    "compare": "compare and contrast: two choices, places, times or ways of doing something",
+    "problem": "problem and solution: suggest and explain ways to solve a realistic situation",
+    "roleplay": "role play: speak as if in a realistic situation, such as a job interview, a shop, an office or a hotel",
+}
+
+TEST_PROMPT_EXTRA = (
+    'Also suggest a test title (at most 8 words, no quotation marks) and a one-sentence description for students. '
+    'Reply with one JSON object and nothing else: {"title":"...","description":"...","questions":[{"text":"...","hint":"..."}]}'
 )
 
 LEVEL_GUIDE = {
@@ -64,12 +81,28 @@ def write_questions(
     description: str = "",
     existing=(),
     answer_seconds: int = 60,
+    style: str = "",
 ) -> tuple[list[dict], bool]:
     """Return ([{"text", "hint"}, ...], is_demo). Raises ServiceError with a plain message if the AI can't help."""
+    result = _write(count=count, level=level, topic=topic, title=title, description=description,
+                    existing=existing, answer_seconds=answer_seconds, style=style, with_title=False)
+    return result["questions"], result["is_demo"]
+
+
+def write_test(*, topic: str, count: int = 5, level: str = "intermediate", answer_seconds: int = 60, style: str = "", existing=()) -> dict:
+    """A whole test from a topic: {"title", "description", "questions": [...], "is_demo"}."""
+    return _write(count=count, level=level, topic=topic, existing=existing, answer_seconds=answer_seconds, style=style, with_title=True)
+
+
+def _write(*, count, level, topic, title="", description="", existing=(), answer_seconds=60, style="", with_title=False) -> dict:
     count = max(1, min(MAX_QUESTIONS, int(count)))
     existing = [text for text in existing if text]
     if settings.EVALUATION_DEMO_MODE:
-        return demo_questions(count=count, level=level, topic=topic or title, existing=existing), True
+        questions = demo_questions(count=count, level=level, topic=topic or title, existing=existing)
+        result = {"questions": questions, "is_demo": True}
+        if with_title:
+            result.update(demo_title(topic, level, len(questions)))
+        return result
 
     request = {
         "number_of_questions": count,
@@ -77,11 +110,13 @@ def write_questions(
         "topic": topic or title or "everyday life",
         "test_title": title,
         "test_description": description,
+        "question_style": STYLES.get(style or "mixed", STYLES["mixed"]),
         "speaking_time_seconds": answer_seconds,
         "existing_questions": existing[-40:],
     }
+    system = SYSTEM_PROMPT.replace(QUESTIONS_REPLY, TEST_PROMPT_EXTRA) if with_title else SYSTEM_PROMPT
     try:
-        reply = feedback.call_model(SYSTEM_PROMPT, json.dumps(request), max_tokens=300 + 120 * count, temperature=0.8)
+        reply = feedback.call_model(system, json.dumps(request), max_tokens=400 + 120 * count, temperature=0.8)
     except EvaluationNotConfigured:
         raise ServiceError(
             "AI question writing isn't set up yet. Add the AI key (GROQ_API_KEY) on the server, or turn on demo mode.",
@@ -90,10 +125,27 @@ def write_questions(
     except EvaluationError:
         raise ServiceError("The AI service is busy right now. Try again in a minute.", status_code=502) from None
 
-    questions = clean_questions((reply or {}).get("questions"), existing)[:count]
+    reply = reply or {}
+    questions = clean_questions(reply.get("questions"), existing)[:count]
     if not questions:
         raise ServiceError("The AI didn't return usable questions. Try again, or change the topic.", status_code=502)
-    return questions, False
+    result = {"questions": questions, "is_demo": False}
+    if with_title:
+        fallback = demo_title(topic, level, len(questions))
+        result["title"] = _tidy(reply.get("title")).strip("\"'“”")[:80] or fallback["title"]
+        result["description"] = _tidy(reply.get("description"))[:300] or fallback["description"]
+    return result
+
+
+def demo_title(topic: str, level: str, count: int) -> dict:
+    """A plain title and description made from the topic (demo mode, or when the AI leaves them out)."""
+    topic = _tidy(topic) or "Everyday English"
+    title = topic[0].upper() + topic[1:]
+    if len(title) > 60:
+        title = title[:57].rsplit(" ", 1)[0] + "…"
+    level_text = {"beginner": "beginner", "intermediate": "intermediate", "advanced": "advanced"}.get(level, "")
+    who = f" for {level_text} learners" if level_text else ""
+    return {"title": title, "description": f"{count} speaking questions about {topic[0].lower() + topic[1:]}{who}."}
 
 
 def clean_questions(items, existing=()) -> list[dict]:

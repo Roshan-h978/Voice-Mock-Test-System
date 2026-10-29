@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Archive, ClipboardList, ListChecks, Pencil, Plus, Send, Trash2, Undo2 } from 'lucide-react';
+import { Archive, ClipboardList, ListChecks, Pencil, Plus, Send, Sparkles, Trash2, Undo2 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import Alert from '../../components/Alert';
 import Button from '../../components/Button';
@@ -161,9 +161,14 @@ export default function ManageTests() {
         title="Mock tests"
         subtitle="Create tests, add questions and publish them for students."
         actions={
-          <Button icon={Plus} onClick={openCreate}>
-            New test
-          </Button>
+          <>
+            <Button variant="secondary" icon={Sparkles} to="/admin/ai-generator">
+              Write with AI
+            </Button>
+            <Button icon={Plus} onClick={openCreate}>
+              New test
+            </Button>
+          </>
         }
       />
 

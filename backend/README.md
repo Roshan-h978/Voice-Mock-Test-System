@@ -35,7 +35,7 @@ Raw data (all tables) is in the Django admin: http://127.0.0.1:8000/admin/ with 
 | | Create | View | Update | Delete |
 | --- | --- | --- | --- | --- |
 | People (**Students**) | **Add person** (with a starting password) or **Invite** by email | list, search, filters | **Edit**: name, level, role, phone, new password; **Suspend** | trash icon: the account with all its results and recordings |
-| Tests (**Mock tests**) | **New test** | list, preview | **Edit**, publish, archive | trash icon; a test with results asks before deleting them too |
+| Tests (**Mock tests**) | **New test**, or **AI generator** for a whole test written by AI | list, preview | **Edit**, publish, archive | trash icon; a test with results asks before deleting them too |
 | Questions | **Add question** | per test | edit, reorder | delete |
 | Results (**Reviews**) | taken by students | queue, filters | **Publish review**, score again | trash icon or **Delete result**: answers and recordings go too |
 
@@ -125,9 +125,10 @@ New Google users become students. Someone who already has an account with the sa
 
 ### AI-written questions
 
-- Admins: **Write questions with AI** on a test's Questions page (suggestions to edit, untick or add), or **Questions written by AI** in the **New test** form.
+- Admins, **AI generator** (in the menu): describe a topic, choose the level, number of questions, speaking time and question style (personal experience, opinion, describe, compare, problem and solution, role play). The AI writes a title, a description and the questions. Edit them, rewrite or remove single questions, add more, then save as a new draft test or add them to an existing test.
+- Admins, quicker options: **Write questions with AI** on a test's Questions page, or **Questions written by AI** in the **New test** form.
 - Students: **Quick practice** can ask the AI for a new question on a topic.
-- Both use the same AI key as scoring. In demo mode the questions come from a built-in bank. Limits per person: `THROTTLE_AI` (default 30 an hour) for writing questions and `THROTTLE_PRACTICE` (default 60 an hour) for scoring practice answers.
+- Both use the same AI key as scoring. In demo mode the questions come from a built-in bank. Limits per person: `THROTTLE_AI_ADMIN` (default 120 an hour) for admins, `THROTTLE_AI` (default 30 an hour) for students' practice questions and `THROTTLE_PRACTICE` (default 60 an hour) for scoring practice answers.
 
 ### Student pages
 

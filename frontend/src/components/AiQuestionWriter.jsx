@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Plus, RefreshCw, Sparkles } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { addQuestions, generateQuestions } from '../services/adminService';
 import { getErrorMessage } from '../services/api';
 import Alert from './Alert';
@@ -68,7 +69,13 @@ export default function AiQuestionWriter({ test, onAdded }) {
           <h2 id="ai-writer-title" className="title-sm">
             Write questions with AI
           </h2>
-          <p className="body-sm vmt-muted">Get suggestions for this test, edit them, then add the ones you want.</p>
+          <p className="body-sm vmt-muted">
+            Get suggestions for this test, edit them, then add the ones you want. For question styles and longer lists, use the{' '}
+            <Link to={`/admin/ai-generator?test=${test.id}`} className="vmt-link">
+              AI generator
+            </Link>
+            .
+          </p>
         </div>
       </div>
 

@@ -706,6 +706,17 @@ audio { width: 100%; height: 40px; }
 .vmt-suggestion.is-off { opacity: 0.55; }
 .vmt-suggestion-check { align-self: flex-start; padding-top: 30px; }
 
+/* Admin: AI generator page */
+.vmt-gen-step > h2 { display: flex; align-items: center; gap: 12px; }
+.vmt-gen-num { display: grid; place-items: center; flex: none; width: 28px; height: 28px; border-radius: 50%; background: var(--navy); color: var(--marigold); font: 700 14px/20px var(--font-sans); }
+.vmt-gen-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.vmt-gen-question { display: flex; gap: var(--space-2); padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--page); }
+.vmt-gen-question .vmt-step-num { width: 32px; height: 32px; font-size: 14px; margin-top: 26px; }
+@media (max-width: 760px) {
+  .vmt-gen-question { flex-direction: column; gap: var(--space-1); }
+  .vmt-gen-question .vmt-step-num { margin-top: 0; }
+}
+
 /* ===================================================================== */
 /* Student: dashboard shortcuts                                           */
 /* ===================================================================== */

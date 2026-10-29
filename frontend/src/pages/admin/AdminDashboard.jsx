@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Award, CircleCheck, CircleX, ClipboardList, KeyRound, Mail, MessageSquare, Plus, TriangleAlert, UserPlus, Users, Zap } from 'lucide-react';
+import { Award, CircleCheck, CircleX, ClipboardList, KeyRound, Mail, MessageSquare, Plus, Sparkles, TriangleAlert, UserPlus, Users, Zap } from 'lucide-react';
 import Alert from '../../components/Alert';
 import Button from '../../components/Button';
 import EmptyState from '../../components/EmptyState';
@@ -119,6 +119,9 @@ export default function AdminDashboard() {
           <>
             <Button variant="secondary" icon={UserPlus} to="/admin/students?invite=1">
               Invite student
+            </Button>
+            <Button variant="secondary" icon={Sparkles} to="/admin/ai-generator">
+              Write a test with AI
             </Button>
             <Button icon={Plus} to="/admin/tests?new=1">
               New test

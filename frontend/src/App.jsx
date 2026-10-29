@@ -19,6 +19,7 @@ import TestInstructions from './pages/student/TestInstructions';
 import TestResult from './pages/student/TestResult';
 
 const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
+const AiGenerator = lazy(() => import('./pages/admin/AiGenerator'));
 const ManageQuestions = lazy(() => import('./pages/admin/ManageQuestions'));
 const ManageStudents = lazy(() => import('./pages/admin/ManageStudents'));
 const ManageTests = lazy(() => import('./pages/admin/ManageTests'));
@@ -89,6 +90,7 @@ export default function App() {
             <Route path="students" element={<ManageStudents />} />
             <Route path="tests" element={<ManageTests />} />
             <Route path="tests/:testId/questions" element={<ManageQuestions />} />
+            <Route path="ai-generator" element={<AiGenerator />} />
             <Route path="reviews" element={<ReviewAttempts />} />
             <Route path="reviews/:attemptId" element={<ReviewAttempts />} />
             <Route path="reports" element={<Reports />} />

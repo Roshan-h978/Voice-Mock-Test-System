@@ -104,6 +104,21 @@ export async function generateQuestions(payload) {
   return data; // { questions: [{ text, hint }], is_demo }
 }
 
+/**
+ * AI generator page: questions (and a title when with_title) from a topic; nothing is saved.
+ * payload: { topic, level, count, answer_seconds, style, with_title?, test?, exclude? }
+ */
+export async function aiWrite(payload) {
+  const { data } = await api.post('/admin/ai/write/', payload);
+  return data; // { questions, is_demo, title?, description? }
+}
+
+/** Saves the AI generator's result as a new draft test. payload: { title, description, level, answer_seconds, questions } */
+export async function aiCreateTest(payload) {
+  const { data } = await api.post('/admin/ai/create-test/', payload);
+  return data; // the new test
+}
+
 /** Adds several questions at the end of a test. questions: [{ text, hint?, answer_seconds? }] */
 export async function addQuestions(testId, questions) {
   const { data } = await api.post('/admin/questions/bulk/', { test: testId, questions });

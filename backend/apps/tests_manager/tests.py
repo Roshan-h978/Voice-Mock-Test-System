@@ -253,3 +253,90 @@ class GenerateQuestionsTests(APITestCase):
         response = self.client.post(reverse("admin-questions-generate"), {"test": self.test.id}, format="json")
         self.assertEqual(response.status_code, 503)
         self.assertIn("GROQ_API_KEY", response.data["detail"])
+
+
+# ---------------------------------------------------------------------------
+# AI generator page: a whole test from a topic
+# ---------------------------------------------------------------------------
+@override_settings(EVALUATION_DEMO_MODE=True)
+class AiGeneratorTests(APITestCase):
+    def setUp(self):
+        self.admin = make_admin()
+        self.client.force_authenticate(self.admin)
+
+    def write(self, **body):
+        return self.client.post(reverse("admin-ai-write"), {"topic": "job interview for hotel receptionists", **body}, format="json")
+
+    def test_whole_test_with_title_and_description(self):
+        response = self.write(count=4, level="intermediate", with_title=True)
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["title"], "Job interview for hotel receptionists")
+        self.assertIn("4 speaking questions", response.data["description"])
+        self.assertEqual(len(response.data["questions"]), 4)
+        self.assertTrue(response.data["is_demo"])
+
+    def test_without_title_and_with_exclusions(self):
+        first = self.write(count=1).data["questions"][0]["text"]
+        again = self.write(count=10, exclude=[first]).data
+        self.assertNotIn("title", again)
+        self.assertNotIn(first, [item["text"] for item in again["questions"]])
+
+    def test_existing_test_questions_are_avoided(self):
+        test = make_test(title="Interview", questions=0)
+        from apps.evaluation.question_writer import DEMO_BANK
+
+        for topic, _level, text, _hint in DEMO_BANK:
+            if topic == "interview":
+                Question.objects.create(test=test, text=text)
+        data = self.write(count=3, test=test.id).data
+        existing = set(test.questions.values_list("text", flat=True))
+        self.assertFalse(existing & {item["text"] for item in data["questions"]})
+
+    def test_bad_input(self):
+        self.assertEqual(self.write(topic="  a ").status_code, 400)
+        self.assertEqual(self.write(style="poems").status_code, 400)
+        self.assertEqual(self.write(count=11).status_code, 400)
+        self.assertEqual(self.write(answer_seconds=5).status_code, 400)
+
+    def test_create_test_with_questions_in_one_step(self):
+        body = {
+            "title": "  Hotel   reception interview ",
+            "description": "Practice for front-desk jobs.",
+            "level": "advanced",
+            "answer_seconds": 90,
+            "questions": [{"text": "Tell me about yourself.", "hint": "Studies, work"}, {"text": "How would you calm an angry guest?"}],
+        }
+        response = self.client.post(reverse("admin-ai-create-test"), body, format="json")
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual((response.data["title"], response.data["status"], response.data["question_count"]), ("Hotel reception interview", "draft", 2))
+        test = MockTest.objects.get(pk=response.data["id"])
+        self.assertEqual(test.created_by, self.admin)
+        self.assertEqual(list(test.questions.values_list("order", "text")), [(1, "Tell me about yourself."), (2, "How would you calm an angry guest?")])
+        self.assertEqual(test.answer_seconds, 90)
+
+    def test_create_needs_questions_and_a_title(self):
+        self.assertEqual(self.client.post(reverse("admin-ai-create-test"), {"title": "Test", "questions": []}, format="json").status_code, 400)
+        self.assertEqual(
+            self.client.post(reverse("admin-ai-create-test"), {"title": "T", "questions": [{"text": "A fine question?"}]}, format="json").status_code, 400
+        )
+        self.assertFalse(MockTest.objects.exists())
+
+    def test_students_cannot_use_it(self):
+        self.client.force_authenticate(make_student())
+        self.assertEqual(self.write().status_code, 403)
+        self.assertEqual(self.client.post(reverse("admin-ai-create-test"), {}, format="json").status_code, 403)
+
+    @override_settings(EVALUATION_DEMO_MODE=False, AI_PROVIDER="groq", GROQ_API_KEY="gsk-test")
+    def test_real_ai_gets_style_time_and_title_request(self):
+        from unittest import mock
+
+        reply = {"title": "“Front desk interview”", "description": "Answer like a real candidate.",
+                 "questions": [{"text": "Imagine a guest arrives late at night without a booking. What do you say?", "hint": "Greeting, options"}]}
+        with mock.patch("apps.evaluation.feedback.call_model", return_value=reply) as call:
+            data = self.write(count=1, style="roleplay", answer_seconds=90, with_title=True).data
+        self.assertEqual(data["title"], "Front desk interview")
+        self.assertFalse(data["is_demo"])
+        system, user = call.call_args.args
+        self.assertIn('"title"', system)
+        self.assertIn("role play", user)
+        self.assertIn('"speaking_time_seconds": 90', user)

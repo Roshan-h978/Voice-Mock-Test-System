@@ -1,6 +1,6 @@
 import { Suspense, useEffect, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
-import { Bell, ChartColumn, ClipboardList, LayoutDashboard, MessageSquare, User, Users } from 'lucide-react';
+import { Bell, ChartColumn, ClipboardList, LayoutDashboard, MessageSquare, Sparkles, User, Users } from 'lucide-react';
 import LoadingSpinner from '../components/LoadingSpinner';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
@@ -28,6 +28,7 @@ function AdminShell() {
     { to: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true },
     { to: '/admin/students', label: 'Students', icon: Users },
     { to: '/admin/tests', label: 'Mock tests', icon: ClipboardList },
+    { to: '/admin/ai-generator', label: 'AI generator', icon: Sparkles },
     { to: '/admin/reviews', label: 'Reviews', icon: MessageSquare, count: reviewCount },
     { to: '/admin/reports', label: 'Reports', icon: ChartColumn },
     { to: '/admin/notifications', label: 'Notifications', icon: Bell, count: unread, countLabel: 'unread' },
